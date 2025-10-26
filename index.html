@@ -451,7 +451,7 @@ const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
                     
                     // Riprova l'azione CRUD
                     if (item.action === 'INSERT') {
-                        result = await supabaseClent.from('movimenti').insert([item.payload]).select();
+                        result = await supabaseClient.from('movimenti').insert([item.payload]).select();
                     } else if (item.action === 'UPDATE') {
                         result = await supabaseClient.from('movimenti').update(item.payload).eq('id', item.id);
                     } else if (item.action === 'DELETE') {
@@ -770,60 +770,52 @@ const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
             });
         }
 
-        async function calculateAndRenderSummaries(globalData, filteredData) {
-    let tot_a = 0, tot_v = 0;
 
-    if (navigator.onLine) {
-        // CORREZIONE PER EVITARE L'ERRORE 400:
-        // Usiamo gli alias (acquisto_tot: e vendita_tot:) e limit(1) invece di single().
-        const { data: globalSums, error: errGlobal } = await supabaseClient 
-            .from('movimenti')
-            .select('acquisto_tot:sum(acquisto), vendita_tot:sum(vendita)') // CORRETTO: alias per le somme
-            .limit(1); // Meno restrittivo di .single()
+ async function calculateAndRenderSummaries(globalData, filteredData) {
+    let tot_a = 0; // Totale Acquisti Globali
+    let tot_v = 0; // Totale Vendite Globali
+    let profitto = 0;
 
-        if (errGlobal) {
-            console.error("Errore nel recupero delle somme globali da Supabase:", errGlobal);
-        }
+    // Calcolo Totali Globali (sia online che offline) - USA SOLO globalData
+    if (globalData && globalData.length > 0) {
+        // Calcola la somma di acquisto (lato client)
+        tot_a = globalData.reduce((sum, item) => sum + (item.acquisto || 0), 0);
+        
+        // Calcola la somma di vendita (lato client)
+        tot_v = globalData.reduce((sum, item) => sum + (item.vendita || 0), 0);
 
-        // Se i dati sono tornati (dovrebbe essere un array di un elemento)
-        if (globalSums && globalSums.length > 0) {
-            tot_a = globalSums[0].acquisto_tot || 0;
-            tot_v = globalSums[0].vendita_tot || 0;
-        }
+        profitto = tot_v - tot_a;
+    } 
+    
+    // OUTPUT TOTALI GENERALI
+    let profit_class = profitto >= 0 ? "profit-positive" : "profit-negative";
+    
+    // Aggiorna l'output con i dati calcolati localmente
+    globalOutput.innerHTML = `
+        <h3><span style="font-size: 1.5rem;">🌎</span> Totale Generale</h3>
+        <p>Acquisti totali: <span class="summary-value">${formatCurrency(tot_a)}</span></p>
+        <p>Vendite totali: <span class="summary-value">${formatCurrency(tot_v)}</span></p>
+        <p>Profitto Netto: <span class="${profit_class}">${formatCurrency(profitto)}</span></p>
+    `;
 
-    } else {
-                 // Fallback se offline, non possiamo ottenere i totali globali
-                 globalOutput.innerHTML = `
-                    <h3><span style="font-size: 1.5rem;">🌎</span> Totale Generale</h3>
-                    <p>Totali non disponibili offline.</p>
-                 `;
-            }
+    if (!navigator.onLine && globalData.length === 0) {
+        // Aggiunge un messaggio specifico solo se siamo offline e non abbiamo dati
+        globalOutput.innerHTML += `<p style="color: var(--color-danger);">Totali non disponibili (Offline, nessun dato in cache).</p>`;
+    }
 
-            let profitto = tot_v - tot_a;
-            let profit_class = profitto >= 0 ? "profit-positive" : "profit-negative";
 
-            if (navigator.onLine) {
-                 globalOutput.innerHTML = `
-                    <h3><span style="font-size: 1.5rem;">🌎</span> Totale Generale</h3>
-                    <p>Acquisti totali: <span class="summary-value">${formatCurrency(tot_a)}</span></p>
-                    <p>Vendite totali: <span class="summary-value">${formatCurrency(tot_v)}</span></p>
-                    <p>Profitto Netto: <span class="${profit_class}">${formatCurrency(profitto)}</span></p>
-                 `;
-            }
+    // Totali Filtrati (basati sui dati visualizzati nella tabella)
+    let da = filteredData.reduce((sum, mov) => sum + (mov.acquisto || 0), 0);
+    let dv = filteredData.reduce((sum, mov) => sum + (mov.vendita || 0), 0);
+    let dp = dv - da;
+    let filtered_profit_class = dp >= 0 ? "profit-positive" : "profit-negative";
 
-            // Totali Filtrati (basati sui dati visualizzati nella tabella)
-            let da = filteredData.reduce((sum, mov) => sum + (mov.acquisto || 0), 0);
-            let dv = filteredData.reduce((sum, mov) => sum + (mov.vendita || 0), 0);
-            let dp = dv - da;
-            let filtered_profit_class = dp >= 0 ? "profit-positive" : "profit-negative";
-
-            dailyOutput.innerHTML = `
-                <h3><span style="font-size: 1.5rem;">📅</span> Riepilogo Filtri</h3>
-                <p>Acquisti: <span class="summary-value">${formatCurrency(da)}</span> | Vendite: <span class="summary-value">${formatCurrency(dv)}</span></p>
-                <p>Profitto: <span class="${filtered_profit_class}">${formatCurrency(dp)}</span></p>
-            `;
-        }
-
+    dailyOutput.innerHTML = `
+        <h3><span style="font-size: 1.5rem;">📅</span> Riepilogo Filtri</h3>
+        <p>Acquisti: <span class="summary-value">${formatCurrency(da)}</span> | Vendite: <span class="summary-value">${formatCurrency(dv)}</span></p>
+        <p>Profitto: <span class="${filtered_profit_class}">${formatCurrency(dp)}</span></p>
+    `;
+}
 
         // =========================================================
         // === EVENT LISTENERS & INITIALIZATION ===
