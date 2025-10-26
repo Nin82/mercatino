@@ -451,11 +451,11 @@ const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
                     
                     // Riprova l'azione CRUD
                     if (item.action === 'INSERT') {
-                        result = await supabase.from('movimenti').insert([item.payload]).select();
+                        result = await supabaseClent.from('movimenti').insert([item.payload]).select();
                     } else if (item.action === 'UPDATE') {
-                        result = await supabase.from('movimenti').update(item.payload).eq('id', item.id);
+                        result = await supabaseClient.from('movimenti').update(item.payload).eq('id', item.id);
                     } else if (item.action === 'DELETE') {
-                        result = await supabase.from('movimenti').delete().eq('id', item.id);
+                        result = await supabaseClient.from('movimenti').delete().eq('id', item.id);
                     }
                     
                     if (result && !result.error) {
@@ -583,7 +583,7 @@ const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
                 stato: 'Acquistato',
             };
 
-            const { data: newData, error } = await supabase
+           const { data: newData, error } = await supabaseClient
                 .from('movimenti')
                 .insert([newRow])
                 .select(); 
@@ -637,7 +637,7 @@ const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
             
             setStatus("⏳ Aggiornamento movimento...");
             
-            const { error } = await supabase
+            const { error } = await supabaseClient
                 .from('movimenti')
                 .update(updatePayload)
                 .eq('id', idToEdit);
@@ -666,7 +666,7 @@ const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
             
             setStatus("⏳ Eliminazione movimento...");
             
-            const { error } = await supabase
+            const { error } = await supabaseClient
                 .from('movimenti')
                 .delete()
                 .eq('id', idToDelete);
@@ -700,7 +700,7 @@ const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         async function loadDataAndRender(filterDate = null, filterStato = 'Tutto') {
             setStatus("⏳ Caricamento dati in corso...");
             
-            let query = supabase.from('movimenti').select('*').order('id', { ascending: false });
+            let query = supabaseClient.from('movimenti').select('*').order('id', { ascending: false });
 
             if (filterDate) {
                 query = query.eq('data', filterDate); 
@@ -775,7 +775,7 @@ const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
             let tot_a = 0, tot_v = 0;
             
             if (navigator.onLine) {
-                 const { data: globalSums } = await supabase
+                 const { data: globalSums } = await supabaseClient
                     .from('movimenti')
                     .select('sum(acquisto), sum(vendita)')
                     .single(); 
@@ -881,4 +881,3 @@ const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     </script>
 </body>
 </html>
-
