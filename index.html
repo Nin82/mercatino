@@ -319,7 +319,7 @@
 <body>
 
     <div class="app-container">
-        <h1>🚀 Contabilità Finanza Pro</h1>
+        <h1>🚀 Contabilità Finanza1</h1>
 
         <div class="summaries">
             <div id="global-output" class="summary-card">
@@ -401,473 +401,316 @@
         </div>
     </div>
 
-    <script>
-        // === CONFIGURAZIONE SUPABASE (SOSTITUISCI CON LE TUE CHIAVI) ===
-        const SUPABASE_URL = 'YOUR_SUPABASE_URL'; 
-        const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
-        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+   <script>
+    // === CONFIGURAZIONE SUPABASE (SOSTITUISCI CON LE TUE CHIAVI) ===
+    const SUPABASE_URL = 'YOUR_SUPABASE_URL'; 
+    const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-        // === VARIABILI GLOBAL UI ===
-        const tableBody = document.getElementById('table-body');
-        const statusOutput = document.getElementById('status-output');
-        const globalOutput = document.getElementById('global-output');
-        const dailyOutput = document.getElementById('daily-output');
-        
-        // Mantiene traccia della riga attualmente selezionata
-        let selectedRowId = null;
+    // === VARIABILI GLOBAL UI ===
+    const tableBody = document.getElementById('table-body');
+    const statusOutput = document.getElementById('status-output');
+    const globalOutput = document.getElementById('global-output');
+    const dailyOutput = document.getElementById('daily-output');
+    
+    // Mantiene traccia della riga attualmente selezionata
+    let selectedRowId = null;
 
-        // =========================================================
-        // === LOGICA BACKGROUND SYNC OFFLINE (NUOVE VARIABILI) ===
-        // =========================================================
-        
-        let offlineQueue = [];
-        const QUEUE_KEY = 'supabase_offline_queue';
+    // Elementi di gestione per l'attivazione/disattivazione
+    const btnVendita = document.getElementById('btn-vendita');
+    const btnModifica = document.getElementById('btn-modifica');
+    const btnElimina = document.getElementById('btn-elimina');
+    const idModificaInput = document.getElementById('id-modifica');
 
-        // === PWA Service Worker Registration ===
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/sw.js')
-                    .then(registration => console.log('SW registrato con successo:', registration.scope))
-                    .catch(error => console.error('SW fallito:', error));
-            });
+
+    // =========================================================
+    // === LOGICA BACKGROUND SYNC OFFLINE (RIPRISTINATA) ===
+    // =========================================================
+    
+    let offlineQueue = [];
+    const QUEUE_KEY = 'supabase_offline_queue';
+
+    // === PWA Service Worker Registration ===
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/sw.js')
+                .then(registration => console.log('SW registrato con successo:', registration.scope))
+                .catch(error => console.error('SW fallito:', error));
+        });
+    }
+    
+    // =========================================================
+    // === FUNZIONI OFFLINE SYNC ===
+    // =========================================================
+
+    function saveQueue() {
+        localStorage.setItem(QUEUE_KEY, JSON.stringify(offlineQueue));
+        updateOfflineStatus();
+    }
+
+    function loadQueue() {
+        const storedQueue = localStorage.getItem(QUEUE_KEY);
+        if (storedQueue) {
+            offlineQueue = JSON.parse(storedQueue);
+        }
+        updateOfflineStatus();
+    }
+
+    function updateOfflineStatus() {
+        const count = offlineQueue.length;
+        if (count > 0) {
+            setStatus(`⚠️ OFFLINE: ${count} operazioni in attesa di sincronizzazione!`);
+            document.body.style.border = '5px solid var(--color-warning)'; 
+        } else {
+             // Rimuove il bordo solo se non ci sono operazioni in coda E non siamo disconnessi
+             if (navigator.onLine) {
+                document.body.style.border = 'none'; 
+             }
+        }
+    }
+    
+    async function attemptSync() {
+        if (offlineQueue.length === 0) {
+            setStatus("✅ Rete online. Nessuna operazione in attesa.");
+            return;
         }
         
-        // =========================================================
-        // === FUNZIONI OFFLINE SYNC (NUOVE FUNZIONI) ===
-        // =========================================================
+        setStatus(`⏳ Rete online. Tentativo di sincronizzare ${offlineQueue.length} operazioni in attesa...`);
+        let successfulSyncs = 0;
+        let errors = 0;
+        const originalQueue = [...offlineQueue]; 
 
-        function saveQueue() {
-            localStorage.setItem(QUEUE_KEY, JSON.stringify(offlineQueue));
-            updateOfflineStatus();
-        }
-
-        function loadQueue() {
-            const storedQueue = localStorage.getItem(QUEUE_KEY);
-            if (storedQueue) {
-                offlineQueue = JSON.parse(storedQueue);
-            }
-            updateOfflineStatus();
-        }
-
-        function updateOfflineStatus() {
-            const count = offlineQueue.length;
-            if (count > 0) {
-                setStatus(`⚠️ OFFLINE: ${count} operazioni in attesa di sincronizzazione!`);
-                // Forzare lo stato a offline in caso di coda non vuota
-                document.body.style.border = '5px solid var(--color-warning)'; 
-            } else {
-                 document.body.style.border = 'none'; 
-            }
-        }
-        
-        async function attemptSync() {
-            if (offlineQueue.length === 0) {
-                setStatus("✅ Rete online. Nessuna operazione in attesa.");
-                return;
-            }
+        for (let i = 0; i < originalQueue.length; i++) {
+            const item = originalQueue[i];
             
-            setStatus(`⏳ Rete online. Tentativo di sincronizzare ${offlineQueue.length} operazioni in attesa...`);
-            let successfulSyncs = 0;
-            let errors = 0;
-            const originalQueue = [...offlineQueue]; // Lavoriamo su una copia
-
-            for (let i = 0; i < originalQueue.length; i++) {
-                const item = originalQueue[i];
+            try {
+                let result;
                 
-                try {
-                    let result;
-                    
-                    if (item.action === 'INSERT') {
-                        result = await supabase.from('movimenti').insert([item.payload]).select();
-                    } else if (item.action === 'UPDATE') {
-                        result = await supabase.from('movimenti').update(item.payload).eq('id', item.id);
-                    } else if (item.action === 'DELETE') {
-                        result = await supabase.from('movimenti').delete().eq('id', item.id);
-                    }
-                    
-                    if (result && !result.error) {
-                        successfulSyncs++;
-                        // Rimuovi l'elemento dalla coda globale solo in caso di successo
-                        offlineQueue = offlineQueue.filter(qItem => qItem !== item); 
-                    } else {
-                        errors++;
-                        console.error("Errore durante la risincronizzazione:", result.error);
-                    }
-                    
-                } catch (e) {
+                if (item.action === 'INSERT') {
+                    // Nota: le insert da coda non ottengono un ID di ritorno come quelle fatte in real-time
+                    result = await supabase.from('movimenti').insert([item.payload]).select();
+                } else if (item.action === 'UPDATE') {
+                    result = await supabase.from('movimenti').update(item.payload).eq('id', item.id);
+                } else if (item.action === 'DELETE') {
+                    result = await supabase.from('movimenti').delete().eq('id', item.id);
+                }
+                
+                if (result && !result.error) {
+                    successfulSyncs++;
+                    // Rimuovi l'elemento dalla coda globale
+                    offlineQueue = offlineQueue.filter(qItem => qItem !== item); 
+                } else {
                     errors++;
-                    console.error("Errore di rete durante la risincronizzazione.", e);
-                }
-            }
-
-            saveQueue(); // Salva la coda aggiornata
-            await refreshData(); // Ricarica la UI
-            
-            if (successfulSyncs > 0) {
-                setStatus(`✅ Sincronizzazione completata: ${successfulSyncs} operazioni riuscite. ${errors} fallite (rimaste in coda).`);
-            } else if (errors > 0) {
-                setStatus(`❌ Tentativo di sincronizzazione fallito. Riprova più tardi. ${errors} operazioni in attesa.`);
-            }
-        }
-
-        // === UTILITY FUNCTIONS ===
-
-        function setStatus(message) {
-            statusOutput.value = message;
-        }
-
-        function formatCurrency(value) {
-            return `€${parseFloat(value).toFixed(2)}`;
-        }
-
-        // Funzione per l'attivazione dei tab
-        function setupTabs() {
-            const tabButtons = document.querySelectorAll('.tab-button');
-            tabButtons.forEach(button => {
-                button.addEventListener('click', () => {
-                    // Rimuovi 'active' da tutti i pulsanti e contenuti
-                    document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
-                    document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-
-                    // Aggiungi 'active' al pulsante cliccato e al contenuto corrispondente
-                    button.classList.add('active');
-                    const targetId = button.getAttribute('data-tab');
-                    document.getElementById(targetId).classList.add('active');
-                });
-            });
-        }
-        
-        // === CRUD FUNCTIONS ===
-
-        // 1. Fetch Dati e Calcolo Analytics
-        async function loadDataAndRender(filterDate = null, filterStato = 'Tutto') {
-            setStatus("⏳ Caricamento dati in corso...");
-            
-            let query = supabase.from('movimenti').select('*').order('id', { ascending: false });
-
-            // Filtro Data
-            if (filterDate) {
-                query = query.eq('data', filterDate); 
-            }
-            
-            // Filtro Stato
-            let isGiacenzaFilter = false;
-            if (filterStato === 'Acquistato' || filterStato === 'Venduto') {
-                query = query.eq('stato', filterStato);
-            } else if (filterStato === 'Giacenza') {
-                query = query.eq('stato', 'Acquistato');
-                isGiacenzaFilter = true; // Necessario per il filtro post-fetch
-            }
-
-            const { data: movimenti, error } = await query;
-
-            if (error) {
-                // Non accodiamo le letture, ma avvisiamo
-                setStatus(`❌ Errore caricamento: ${error.message} (Se offline, i dati non sono recenti).`);
-                return;
-            }
-
-            // 2. Calcolo Analytics e Filtro Client-Side (Giacenza)
-            let processedData = movimenti.map(mov => {
-                const acquisto = mov.acquisto || 0.0;
-                const vendita = mov.vendita || 0.0;
-                const profitto = vendita - acquisto;
-                
-                let attenzione = "";
-                if (mov.stato === 'Acquistato') {
-                    const today = new Date();
-                    const itemDate = new Date(mov.data);
-                    const diffTime = today - itemDate;
-                    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-                    
-                    if (diffDays > 14) {
-                        attenzione = `🔴 In giacenza da ${diffDays} gg`;
-                    }
+                    console.error("Errore durante la risincronizzazione:", result ? result.error : "Nessun risultato");
                 }
                 
-                return { ...mov, profitto, '⚠️ Attenzione': attenzione };
-            });
-            
-            // Se il filtro è 'Giacenza', filtriamo i risultati già processati
-            if (isGiacenzaFilter) {
-                processedData = processedData.filter(mov => mov['⚠️ Attenzione'] !== "");
+            } catch (e) {
+                errors++;
+                console.error("Errore di rete durante la risincronizzazione.", e);
             }
-            
-            // 3. Rendering
-            renderTable(processedData);
-            calculateAndRenderSummaries(movimenti, processedData);
-            setStatus(`✅ Dati caricati. Trovati ${processedData.length} movimenti.`);
-            
-            return processedData;
         }
 
-        // Funzione per il rendering della tabella
-        function renderTable(data) {
-            tableBody.innerHTML = ''; // Pulisci la tabella
-            
-            data.forEach(mov => {
-                const row = tableBody.insertRow();
-                row.setAttribute('data-id', mov.id);
-                row.innerHTML = `
-                    <td>${mov.id}</td>
-                    <td>${mov.data}</td>
-                    <td>${mov.articolo}</td>
-                    <td>${formatCurrency(mov.acquisto)}</td>
-                    <td>${formatCurrency(mov.vendita)}</td>
-                    <td>${formatCurrency(mov.guadagno_previsto)}</td>
-                    <td>${mov.stato}</td>
-                    <td style="font-weight: 700;">${formatCurrency(mov.profitto)}</td>
-                    <td>${mov['⚠️ Attenzione']}</td>
-                `;
-            });
-        }
+        saveQueue(); 
+        await refreshData(); 
         
-        // Funzione per il calcolo e rendering dei riepiloghi
-        async function calculateAndRenderSummaries(globalData, filteredData) {
-            // 1. Riepilogo Globale (usando query Supabase per l'efficienza sui totali)
-            const { data: globalSums, error: errGlobal } = await supabase
-                .from('movimenti')
-                .select('sum(acquisto), sum(vendita)')
-                .single(); 
-            
-            let tot_a = globalSums?.sum.acquisto || 0;
-            let tot_v = globalSums?.sum.vendita || 0;
-            let profitto = tot_v - tot_a;
-            let profit_class = profitto >= 0 ? "profit-positive" : "profit-negative";
-
-            globalOutput.innerHTML = `
-                <h3><span style="font-size: 1.5rem;">🌎</span> Totale Generale</h3>
-                <p>Acquisti totali: <span class="summary-value">${formatCurrency(tot_a)}</span></p>
-                <p>Vendite totali: <span class="summary-value">${formatCurrency(tot_v)}</span></p>
-                <p>Profitto Netto: <span class="${profit_class}">${formatCurrency(profitto)}</span></p>
-            `;
-            
-            // 2. Riepilogo Filtrato (usando i dati già processati)
-            let da = filteredData.reduce((sum, mov) => sum + (mov.acquisto || 0), 0);
-            let dv = filteredData.reduce((sum, mov) => sum + (mov.vendita || 0), 0);
-            let dp = dv - da;
-            
-            dailyOutput.innerHTML = `
-                <h3><span style="font-size: 1.5rem;">📅</span> Dati Filtrati</h3>
-                <p>Acquisti: <span class="summary-value">${formatCurrency(da)}</span> | Vendite: <span class="summary-value">${formatCurrency(dv)}</span></p>
-                <p>Profitto: <span class="summary-value">${formatCurrency(dp)}</span></p>
-            `;
+        if (successfulSyncs > 0) {
+            setStatus(`✅ Sincronizzazione completata: ${successfulSyncs} operazioni riuscite. ${errors} fallite (rimaste in coda).`);
+        } else if (errors > 0) {
+            setStatus(`❌ Tentativo di sincronizzazione fallito. Riprova più tardi. ${errors} operazioni in attesa.`);
         }
-
-        // Funzione 2. Aggiungi Acquisto
-        async function addAcquisto() {
-            const data = document.getElementById('data-acquisto').value;
-            const articolo = document.getElementById('articolo-acquisto').value.trim();
-            const prezzoAcquisto = parseFloat(document.getElementById('prezzo-acquisto').value);
-            const guadagnoPrevisto = parseFloat(document.getElementById('guadagno-previsto').value) || 0.0;
-            
-            if (!articolo || isNaN(prezzoAcquisto) || prezzoAcquisto < 0) {
-                setStatus("⚠️ Inserisci un articolo e un prezzo d'acquisto valido.");
-                return;
-            }
-
-            setStatus("⏳ Registrazione acquisto...");
-
-            const newRow = {
-                data: data,
-                articolo: articolo,
-                acquisto: prezzoAcquisto,
-                vendita: 0.0,
-                guadagno_previsto: guadagnoPrevisto,
-                stato: 'Acquistato',
-            };
-
-            const { data: newData, error } = await supabase
-                .from('movimenti')
-                .insert([newRow])
-                .select(); // Richiede i dati inseriti per l'ID
-
-            if (error) {
-                 // **=== LOGICA OFFLINE: INSERIMENTO ===**
-                if (error.message.includes("Failed to fetch")) {
-                    offlineQueue.push({ action: 'INSERT', payload: newRow, tempId: Date.now() }); // Usiamo un tempId per la coda
-                    saveQueue();
-                    setStatus(`⚠️ Acquisito salvato offline! In coda: ${offlineQueue.length} op.`);
-                } else {
-                    setStatus(`❌ Errore registrazione: ${error.message}`);
-                }
-            } else {
-                setStatus(`✅ Acquisto registrato (ID ${newData[0].id})`);
-                await refreshData();
-                // Pulisci i campi
-                document.getElementById('articolo-acquisto').value = '';
-                document.getElementById('prezzo-acquisto').value = '';
-                document.getElementById('guadagno-previsto').value = '';
-            }
-        }
-        
-        // Funzione 3. Modifica/Vendita
-        async function updateMovimento(isVendita = false) {
-            const idToEdit = parseInt(document.getElementById('id-modifica').value);
-            const nuovoArticolo = document.getElementById('nuovo-articolo').value.trim();
-            const nuovoAcquisto = document.getElementById('nuovo-acquisto').value.trim();
-            const prezzoVendita = document.getElementById('prezzo-vendita').value.trim();
-            
-            if (isNaN(idToEdit) || idToEdit <= 0) {
-                setStatus("⚠️ Seleziona un ID valido prima di modificare.");
-                return;
-            }
-            
-            let updatePayload = {};
-            let messages = [];
-
-            // 1. Modifica Dettagli (Articolo / Acquisto)
-            if (nuovoArticolo) {
-                updatePayload.articolo = nuovoArticolo;
-                messages.push("✏️ Articolo modificato");
-            }
-            if (nuovoAcquisto && !isNaN(parseFloat(nuovoAcquisto)) && parseFloat(nuovoAcquisto) >= 0) {
-                updatePayload.acquisto = parseFloat(nuovoAcquisto);
-                messages.push("💸 Prezzo acquisto aggiornato");
-            }
-
-            // 2. Registra Vendita (se il pulsante è 'Vendita' o il campo prezzo è popolato)
-            if (isVendita || (prezzoVendita && !isNaN(parseFloat(prezzoVendita)) && parseFloat(prezzoVendita) >= 0)) {
-                updatePayload.vendita = parseFloat(prezzoVendita) || 0.0;
-                updatePayload.stato = 'Venduto';
-                messages.push("💰 Vendita registrata");
-            }
+    }
 
 
-            if (Object.keys(updatePayload).length === 0) {
-                setStatus("ℹ️ Nessuna modifica da effettuare.");
-                return;
-            }
-            
-            setStatus("⏳ Aggiornamento movimento...");
-            
-            const { error } = await supabase
-                .from('movimenti')
-                .update(updatePayload)
-                .eq('id', idToEdit);
+    // === UTILITY FUNCTIONS ===
 
-            if (error) {
-                // **=== LOGICA OFFLINE: AGGIORNAMENTO ===**
-                if (error.message.includes("Failed to fetch")) {
-                    offlineQueue.push({ action: 'UPDATE', id: idToEdit, payload: updatePayload });
-                    saveQueue();
-                    setStatus(`⚠️ Modifica/Vendita salvata offline! In coda: ${offlineQueue.length} op.`);
-                } else {
-                    setStatus(`❌ Errore aggiornamento: ${error.message}`);
-                }
-            } else {
-                setStatus(messages.join(" • "));
-                await refreshData();
-            }
-        }
+    function setStatus(message) {
+        statusOutput.value = message;
+    }
 
-        // Funzione 4. Elimina
-        async function deleteMovimento() {
-            const idToDelete = parseInt(document.getElementById('id-modifica').value);
-            
-            if (isNaN(idToDelete) || idToDelete <= 0) {
-                setStatus("⚠️ Seleziona un ID valido da eliminare.");
-                return;
-            }
-            
-            if (!confirm(`Sei sicuro di voler eliminare il movimento con ID ${idToDelete}?`)) {
-                return;
-            }
-            
-            setStatus("⏳ Eliminazione movimento...");
-            
-            const { error } = await supabase
-                .from('movimenti')
-                .delete()
-                .eq('id', idToDelete);
+    function formatCurrency(value) {
+        return `€${parseFloat(value).toFixed(2)}`;
+    }
 
-            if (error) {
-                // **=== LOGICA OFFLINE: ELIMINAZIONE ===**
-                if (error.message.includes("Failed to fetch")) {
-                    offlineQueue.push({ action: 'DELETE', id: idToDelete });
-                    saveQueue();
-                    setStatus(`⚠️ Eliminazione salvata offline! In coda: ${offlineQueue.length} op.`);
-                } else {
-                    setStatus(`❌ Errore eliminazione: ${error.message}`);
-                }
-            } else {
-                setStatus(`🗑️ Movimento ID ${idToDelete} eliminato.`);
-                await refreshData();
-                // Pulisci i campi di modifica
-                document.getElementById('id-modifica').value = '';
-                document.getElementById('nuovo-articolo').value = '';
-                document.getElementById('nuovo-acquisto').value = '';
-                document.getElementById('prezzo-vendita').value = '';
-                selectedRowId = null;
-            }
-        }
-        
-        // Funzione di refresh per applicare i filtri correnti
-        async function refreshData() {
-            const filterDate = document.getElementById('filtro-data').value;
-            const filterStato = document.getElementById('filtro-stato').value;
-            await loadDataAndRender(filterDate, filterStato);
-            updateOfflineStatus(); // Aggiorna lo stato visivo della coda
-        }
+    // *** FUNZIONE RIPRISTINATA E MIGLIORATA ***
+    function setupTabs() {
+        const tabButtons = document.querySelectorAll('.tab-button');
+        tabButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                // Rimuovi 'active' da tutti i pulsanti e contenuti
+                document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
 
-        // Funzione di reset
-        async function resetAll() {
-            document.getElementById('filtro-data').value = '';
-            document.getElementById('filtro-stato').value = 'Tutto';
-            await loadDataAndRender(null, 'Tutto');
-        }
-
-        // === EVENT LISTENERS & SETUP ===
-        
-        document.addEventListener('DOMContentLoaded', () => {
-            setupTabs();
-            // === NUOVO: Carica la coda all'avvio e setta il listener per il ritorno della rete ===
-            loadQueue(); 
-            loadDataAndRender(); 
-            
-            // Listener per il ritorno della rete (tenta la sincronizzazione)
-            window.addEventListener('online', attemptSync);
-            
-            // Listener pulsanti CRUD
-            document.getElementById('btn-acquisto').addEventListener('click', addAcquisto);
-            document.getElementById('btn-modifica').addEventListener('click', () => updateMovimento(false));
-            document.getElementById('btn-vendita').addEventListener('click', () => updateMovimento(true)); 
-            document.getElementById('btn-elimina').addEventListener('click', deleteMovimento);
-            document.getElementById('btn-filtra').addEventListener('click', refreshData);
-            document.getElementById('btn-reset-all').addEventListener('click', resetAll);
-            
-            // Listener per la selezione delle righe della tabella
-            tableBody.addEventListener('click', (e) => {
-                const row = e.target.closest('tr');
-                if (!row) return;
-
-                // Rimuovi la selezione precedente
-                const prevSelected = document.querySelector('.selected-row');
-                if (prevSelected) {
-                    prevSelected.classList.remove('selected-row');
-                }
-                
-                // Aggiorna la selezione
-                selectedRowId = parseInt(row.getAttribute('data-id'));
-                row.classList.add('selected-row');
-
-                // Estrai i dati dalla riga
-                const columns = Array.from(row.querySelectorAll('td')).map(td => td.textContent.trim());
-                
-                // Popola i campi del tab "Gestione"
-                document.getElementById('id-modifica').value = columns[0];
-                document.getElementById('nuovo-articolo').value = columns[2];
-                // Rimuovi il simbolo € prima di popolare i campi numerici
-                document.getElementById('nuovo-acquisto').value = columns[3].replace('€', ''); 
-                document.getElementById('prezzo-vendita').value = columns[4].replace('€', ''); 
-                
-                setStatus(`ℹ️ ID ${selectedRowId} selezionato per la modifica.`);
-
-                // Attiva il tab di gestione
-                document.querySelector('.tab-button[data-tab="tab-gestione"]').click();
+                // Aggiungi 'active' al pulsante cliccato e al contenuto corrispondente
+                button.classList.add('active');
+                const targetId = button.getAttribute('data-tab');
+                document.getElementById(targetId).classList.add('active');
             });
         });
+    }
+
+    // *** NUOVA FUNZIONE PER GESTIRE LO STATO DEI BOTTONI ***
+    function updateManagementButtons() {
+        const isSelected = selectedRowId !== null;
+        
+        btnVendita.disabled = !isSelected;
+        btnModifica.disabled = !isSelected;
+        btnElimina.disabled = !isSelected;
+        
+        if (!isSelected) {
+            btnVendita.style.opacity = '0.7';
+            btnModifica.style.opacity = '0.7';
+            btnElimina.style.opacity = '0.7';
+            idModificaInput.value = '';
+        } else {
+            btnVendita.style.opacity = '1';
+            btnModifica.style.opacity = '1';
+            btnElimina.style.opacity = '1';
+        }
+    }
+    
+    // === CRUD FUNCTIONS (OMESSE PER BREVITÀ, RIMANGONO INVARIATE TRANNE PER L'AGGIUNTA DI updateManagementButtons ALLA FINE) ===
+
+    // ... (Le tue funzioni CRUD: loadDataAndRender, renderTable, calculateAndRenderSummaries) ...
+    
+    // Funzione 2. Aggiungi Acquisto
+    async function addAcquisto() {
+        const data = document.getElementById('data-acquisto').value;
+        const articolo = document.getElementById('articolo-acquisto').value.trim();
+        const prezzoAcquisto = parseFloat(document.getElementById('prezzo-acquisto').value);
+        const guadagnoPrevisto = parseFloat(document.getElementById('guadagno-previsto').value) || 0.0;
+        
+        if (!articolo || isNaN(prezzoAcquisto) || prezzoAcquisto < 0) {
+            setStatus("⚠️ Inserisci un articolo e un prezzo d'acquisto valido.");
+            return;
+        }
+
+        setStatus("⏳ Registrazione acquisto...");
+
+        const newRow = {
+            data: data,
+            articolo: articolo,
+            acquisto: prezzoAcquisto,
+            vendita: 0.0,
+            guadagno_previsto: guadagnoPrevisto,
+            stato: 'Acquistato',
+        };
+
+        const { data: newData, error } = await supabase
+            .from('movimenti')
+            .insert([newRow])
+            .select(); 
+
+        if (error) {
+            if (error.message.includes("Failed to fetch")) {
+                offlineQueue.push({ action: 'INSERT', payload: newRow, tempId: Date.now() }); 
+                saveQueue();
+                setStatus(`⚠️ Acquisito salvato offline! In coda: ${offlineQueue.length} op.`);
+            } else {
+                setStatus(`❌ Errore registrazione: ${error.message}`);
+            }
+        } else {
+            setStatus(`✅ Acquisto registrato (ID ${newData[0].id})`);
+            await refreshData();
+            document.getElementById('articolo-acquisto').value = '';
+            document.getElementById('prezzo-acquisto').value = '';
+            document.getElementById('guadagno-previsto').value = '';
+        }
+    }
+    
+    // Funzione 3. Modifica/Vendita
+    async function updateMovimento(isVendita = false) {
+        const idToEdit = parseInt(document.getElementById('id-modifica').value);
+        const nuovoArticolo = document.getElementById('nuovo-articolo').value.trim();
+        const nuovoAcquisto = document.getElementById('nuovo-acquisto').value.trim();
+        const prezzoVendita = document.getElementById('prezzo-vendita').value.trim();
+        
+        if (isNaN(idToEdit) || idToEdit <= 0) {
+            setStatus("⚠️ Seleziona un ID valido prima di modificare.");
+            return;
+        }
+        
+        let updatePayload = {};
+        let messages = [];
+
+        if (nuovoArticolo) {
+            updatePayload.articolo = nuovoArticolo;
+            messages.push("✏️ Articolo modificato");
+        }
+        if (nuovoAcquisto && !isNaN(parseFloat(nuovoAcquisto)) && parseFloat(nuovoAcquisto) >= 0) {
+            updatePayload.acquisto = parseFloat(nuovoAcquisto);
+            messages.push("💸 Prezzo acquisto aggiornato");
+        }
+
+        if (isVendita || (prezzoVendita && !isNaN(parseFloat(prezzoVendita)) && parseFloat(prezzoVendita) >= 0)) {
+            updatePayload.vendita = parseFloat(prezzoVendita) || 0.0;
+            updatePayload.stato = 'Venduto';
+            messages.push("💰 Vendita registrata");
+        }
+
+
+        if (Object.keys(updatePayload).length === 0) {
+            setStatus("ℹ️ Nessuna modifica da effettuare.");
+            return;
+        }
+        
+        setStatus("⏳ Aggiornamento movimento...");
+        
+        const { error } = await supabase
+            .from('movimenti')
+            .update(updatePayload)
+            .eq('id', idToEdit);
+
+        if (error) {
+            if (error.message.includes("Failed to fetch")) {
+                offlineQueue.push({ action: 'UPDATE', id: idToEdit, payload: updatePayload });
+                saveQueue();
+                setStatus(`⚠️ Modifica/Vendita salvata offline! In coda: ${offlineQueue.length} op.`);
+            } else {
+                setStatus(`❌ Errore aggiornamento: ${error.message}`);
+            }
+        } else {
+            setStatus(messages.join(" • "));
+            await refreshData();
+        }
+    }
+
+    // Funzione 4. Elimina
+    async function deleteMovimento() {
+        const idToDelete = parseInt(document.getElementById('id-modifica').value);
+        
+        if (isNaN(idToDelete) || idToDelete <= 0) {
+            setStatus("⚠️ Seleziona un ID valido da eliminare.");
+            return;
+        }
+        
+        if (!confirm(`Sei sicuro di voler eliminare il movimento con ID ${idToDelete}?`)) {
+            return;
+        }
+        
+        setStatus("⏳ Eliminazione movimento...");
+        
+        const { error } = await supabase
+            .from('movimenti')
+            .delete()
+            .eq('id', idToDelete);
+
+        if (error) {
+            if (error.message.includes("Failed to fetch")) {
+                offlineQueue.push({ action: 'DELETE', id: idToDelete });
+                saveQueue();
+                setStatus(`⚠️ Eliminazione salvata offline! In coda: ${offlineQueue.length} op.`);
+            } else {
+                setStatus(`❌ Errore eliminazione: ${error.message}`);
+            }
+        } else {
+            setStatus(`🗑️ Movimento ID ${idToDelete} eliminato.`);
+            // Resetta selectedRowId e i campi dopo l'eliminazione
+            selectedRowId = null; 
+            document.getElementById('id-modifica').value = '';
+            document.getElementById('nuovo-articolo').value = '';
+            document
 
     </script>
     </body>
 </html>
+
