@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestione Inventario - Supabase PWA</title>
+    <title>Gestione Inventario PWA</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         :root {
@@ -384,16 +384,24 @@
         let offlineQueue = [];
         const QUEUE_KEY = 'supabase_offline_queue';
 
-        // --- PWA Service Worker Registration (Assumi che 'sw.js' esista) ---
+        // --- PWA Service Worker Registration ---
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('/sw.js')
-                    .then(registration => console.log('SW registrato con successo:', registration.scope))
+                    .then(registration => {
+                        console.log('SW registrato con successo:', registration.scope);
+                        // Aggiunge un listener per la gestione del Background Sync API
+                        if (registration.sync) {
+                            console.log("Background Sync supportato.");
+                        } else {
+                            console.log("Background Sync NON supportato. Utilizzo fallback 'online' event.");
+                        }
+                    })
                     .catch(error => console.error('SW fallito:', error));
             });
         }
         
-        // --- Gestione Coda Offline ---
+        // --- Gestione Coda Offline (Client-side) ---
         function saveQueue() {
             localStorage.setItem(QUEUE_KEY, JSON.stringify(offlineQueue));
             updateOfflineStatus();
@@ -410,33 +418,43 @@
         function updateOfflineStatus() {
             const count = offlineQueue.length;
             if (count > 0) {
-                setStatus(`⚠️ OFFLINE: ${count} operazioni in attesa di sincronizzazione!`);
+                // Notifica sia la coda che la connessione (se offline)
+                const connectionStatus = navigator.onLine ? 'Online' : 'Offline';
+                setStatus(`⚠️ ${connectionStatus}: ${count} operazioni in attesa di sincronizzazione!`);
                 document.body.style.border = '5px solid var(--color-warning)'; 
             } else {
-                 // Rimuove il bordo solo se non ci sono operazioni in coda E non siamo disconnessi
                  if (navigator.onLine) {
                     document.body.style.border = 'none'; 
+                    setStatus("✅ Dati caricati e sincronizzati.");
+                 } else {
+                     setStatus("❌ Rete disconnessa. I dati potrebbero non essere recenti.");
+                     document.body.style.border = '5px solid var(--color-danger)'; 
                  }
             }
         }
         
+        // Funzione per il background sync (chiamata dal Service Worker o al ritorno dell'online)
         async function attemptSync() {
             if (offlineQueue.length === 0) {
                 setStatus("✅ Rete online. Nessuna operazione in attesa.");
                 return;
             }
+            if (!navigator.onLine) {
+                 setStatus("❌ Impossibile sincronizzare. La rete è offline.");
+                 return;
+            }
             
             setStatus(`⏳ Rete online. Tentativo di sincronizzare ${offlineQueue.length} operazioni in attesa...`);
             let successfulSyncs = 0;
             let errors = 0;
-            // Fai una copia della coda da processare
             const itemsToProcess = [...offlineQueue]; 
             offlineQueue = []; // Svuota la coda prima di iniziare
 
             for (const item of itemsToProcess) {
                 try {
-                    let result;
+                    let result = { error: null };
                     
+                    // Riprova l'azione CRUD originale con i payload salvati
                     if (item.action === 'INSERT') {
                         result = await supabase.from('movimenti').insert([item.payload]).select();
                     } else if (item.action === 'UPDATE') {
@@ -449,14 +467,14 @@
                         successfulSyncs++;
                     } else {
                         errors++;
-                        // Se fallisce, reinserisci nella coda per il prossimo tentativo
+                        // Se fallisce (es. errore di validazione DB), reinserisci nella coda
                         offlineQueue.push(item);
                         console.error("Errore durante la risincronizzazione:", result ? result.error : "Nessun risultato");
                     }
                     
                 } catch (e) {
                     errors++;
-                    // Se fallisce, reinserisci nella coda per il prossimo tentativo
+                    // Errore di rete (teoricamente non dovrebbe succedere qui, ma per sicurezza)
                     offlineQueue.push(item);
                     console.error("Errore di rete durante la risincronizzazione.", e);
                 }
@@ -471,6 +489,57 @@
                 setStatus(`❌ Tentativo di sincronizzazione fallito. ${errors} operazioni in attesa.`);
             }
         }
+
+        // Gestisce i messaggi inviati dal Service Worker
+        navigator.serviceWorker.onmessage = async (event) => {
+            const data = event.data;
+
+            // 1. Il Service Worker ci dice che una richiesta di scrittura è fallita (siamo offline)
+            if (data.type === 'BACKGROUND_SYNC_REQUEST') {
+                const details = data.details;
+                console.log('[CLIENT] Ricevuto richiesta fallita da SW:', details);
+                
+                // --- Logica per ricostruire il payload dal 'details' e accodarlo ---
+                let action;
+                let payload = JSON.parse(details.body || '{}');
+                let id = null;
+
+                // Il Service Worker non conosce l'ID del movimento modificato/eliminato, dobbiamo estrarlo dalla URL
+                const urlParts = new URL(details.url).searchParams;
+                const eqId = urlParts.get('id');
+                if (eqId) {
+                    id = parseInt(eqId); 
+                    // Per le UPDATE e DELETE, l'ID è essenziale.
+                }
+
+                if (details.method === 'POST') {
+                    action = 'INSERT';
+                    // Per INSERT, payload è l'oggetto completo del movimento
+                } else if (details.method === 'PATCH') {
+                    action = 'UPDATE';
+                    // Per UPDATE, payload sono solo i campi modificati.
+                } else if (details.method === 'DELETE') {
+                    action = 'DELETE';
+                    payload = null; // Il DELETE non ha payload nel nostro contesto
+                }
+                
+                if (action) {
+                    // Aggiungi alla coda per la sincronizzazione successiva
+                    offlineQueue.push({ action, id, payload });
+                    saveQueue();
+                    
+                    // Forza un refresh per mostrare lo stato OFFLINE anche se i dati sono "vecchi"
+                    await refreshData(); 
+                    setStatus(`⚠️ Transazione salvata offline! ${offlineQueue.length} op. in coda.`);
+                }
+
+            // 2. Il Service Worker ci dice che la rete è tornata (dobbiamo risincronizzare)
+            } else if (data.type === 'SYNC_NOW_POSSIBLE') {
+                 console.log('[CLIENT] Ricevuto avviso di SYNC_NOW_POSSIBLE da SW.');
+                 // Chiama la nostra logica di sincronizzazione lato client
+                 attemptSync();
+            }
+        };
 
 
         // =========================================================
@@ -489,11 +558,9 @@
             const tabButtons = document.querySelectorAll('.tab-button');
             tabButtons.forEach(button => {
                 button.addEventListener('click', () => {
-                    // Rimuovi 'active' da tutti i pulsanti e contenuti
                     document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
                     document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
 
-                    // Aggiungi 'active' al pulsante cliccato e al contenuto corrispondente
                     button.classList.add('active');
                     const targetId = button.getAttribute('data-tab');
                     document.getElementById(targetId).classList.add('active');
@@ -511,7 +578,6 @@
         }
         
         function updateManagementButtons() {
-            // Abilita i bottoni solo se un ID valido è stato selezionato
             const isSelected = selectedRowId !== null && !isNaN(selectedRowId) && selectedRowId > 0;
             
             btnVendita.disabled = !isSelected;
@@ -524,15 +590,26 @@
             btnElimina.style.opacity = opacityValue;
             
             if (!isSelected) {
-                // Rimuovi la classe 'selected-row' da tutte le righe se non c'è selezione
                 document.querySelectorAll('.selected-row').forEach(row => row.classList.remove('selected-row'));
             }
         }
         
         // =========================================================
-        // === CRUD FUNCTIONS ===
+        // === CRUD FUNCTIONS (MODIFICATE PER GESTIONE ERRORE/OFFLINE) ===
         // =========================================================
         
+        // Funzione helper per la gestione degli errori e l'accodamento
+        function handleCrudError(error, action, payload, id = null) {
+            if (error.message.includes("Failed to fetch")) {
+                // Errore di rete: usiamo la logica del Service Worker 
+                // Il Service Worker invierà un messaggio (vedi navigator.serviceWorker.onmessage)
+                // che salverà il payload corretto.
+                setStatus("⚠️ Errore di rete: La transazione è in attesa di sincronizzazione. Consulta la console.");
+            } else {
+                setStatus(`❌ Errore DB: ${error.message}`);
+            }
+        }
+
         // Funzione 2. Aggiungi Acquisto
         async function addAcquisto() {
             const data = document.getElementById('data-acquisto').value || new Date().toISOString().split('T')[0];
@@ -562,17 +639,11 @@
                 .select(); 
 
             if (error) {
-                if (error.message.includes("Failed to fetch")) {
-                    offlineQueue.push({ action: 'INSERT', payload: newRow, tempId: Date.now() }); 
-                    saveQueue();
-                    setStatus(`⚠️ Acquisito salvato offline! In coda: ${offlineQueue.length} op.`);
-                } else {
-                    setStatus(`❌ Errore registrazione: ${error.message}`);
-                }
+                handleCrudError(error, 'INSERT', newRow);
+                // Non c'è bisogno di fare l'accodamento qui, lo farà il Service Worker.
             } else {
                 setStatus(`✅ Acquisto registrato (ID ${newData[0].id})`);
                 await refreshData();
-                // Pulisci i campi dopo il successo
                 document.getElementById('articolo-acquisto').value = '';
                 document.getElementById('prezzo-acquisto').value = '';
                 document.getElementById('guadagno-previsto').value = '';
@@ -603,18 +674,11 @@
                 messages.push("💸 Prezzo acquisto aggiornato");
             }
 
-            // La vendita ha la priorità e imposta lo stato a 'Venduto'
             if (isVendita || (prezzoVendita && !isNaN(parseFloat(prezzoVendita)) && parseFloat(prezzoVendita) >= 0)) {
                 updatePayload.vendita = parseFloat(prezzoVendita) || 0.0;
                 updatePayload.stato = 'Venduto';
                 messages.push("💰 Vendita registrata");
             }
-            // Se si modificano solo altri campi, ma c'è un prezzo di vendita valido, si considera comunque una modifica dello stato.
-            else if (idToEdit && !isVendita) {
-                // Se non è vendita, assicurati che lo stato non venga modificato a meno che non sia specificato
-                // (Qui assumiamo che se la riga è stata selezionata, lo stato sia 'Acquistato' a meno che non sia 'Venduto' dall'origine)
-            }
-
 
             if (Object.keys(updatePayload).length === 0) {
                 setStatus("ℹ️ Nessuna modifica da effettuare.");
@@ -629,16 +693,10 @@
                 .eq('id', idToEdit);
 
             if (error) {
-                if (error.message.includes("Failed to fetch")) {
-                    offlineQueue.push({ action: 'UPDATE', id: idToEdit, payload: updatePayload });
-                    saveQueue();
-                    setStatus(`⚠️ Modifica/Vendita salvata offline! In coda: ${offlineQueue.length} op.`);
-                } else {
-                    setStatus(`❌ Errore aggiornamento: ${error.message}`);
-                }
+                handleCrudError(error, 'UPDATE', updatePayload, idToEdit);
             } else {
                 setStatus(messages.join(" • "));
-                clearManagementFields(); // Pulisci i campi e disattiva i bottoni
+                clearManagementFields(); 
                 await refreshData();
             }
         }
@@ -664,16 +722,10 @@
                 .eq('id', idToDelete);
 
             if (error) {
-                if (error.message.includes("Failed to fetch")) {
-                    offlineQueue.push({ action: 'DELETE', id: idToDelete });
-                    saveQueue();
-                    setStatus(`⚠️ Eliminazione salvata offline! In coda: ${offlineQueue.length} op.`);
-                } else {
-                    setStatus(`❌ Errore eliminazione: ${error.message}`);
-                }
+                handleCrudError(error, 'DELETE', null, idToDelete);
             } else {
                 setStatus(`🗑️ Movimento ID ${idToDelete} eliminato.`);
-                clearManagementFields(); // Pulisci i campi e disattiva i bottoni
+                clearManagementFields(); 
                 await refreshData();
             }
         }
@@ -716,7 +768,6 @@
 
             if (error) {
                 setStatus(`❌ Errore caricamento: ${error.message} (Se offline, i dati non sono recenti).`);
-                // Se non riusciamo a caricare, usiamo un fallback o semplicemente usciamo.
                 return;
             }
 
@@ -741,13 +792,13 @@
             });
             
             if (isGiacenzaFilter) {
-                // Filtra solo quelli con l'avviso di attenzione (cioè > 14 giorni in giacenza)
                 processedData = processedData.filter(mov => mov['⚠️ Attenzione'] !== "");
             }
             
             renderTable(processedData);
-            await calculateAndRenderSummaries(movimenti, processedData); // Passa tutti i movimenti per i totali generali
-            setStatus(`✅ Dati caricati. Trovati ${processedData.length} movimenti.`);
+            await calculateAndRenderSummaries(movimenti, processedData); 
+            // Aggiorna lo stato, che include il conteggio della coda offline
+            updateOfflineStatus(); 
         }
         
         function renderTable(data) {
@@ -755,10 +806,6 @@
             data.forEach(mov => {
                 const row = tableBody.insertRow();
                 row.setAttribute('data-id', mov.id);
-                // Aggiungi una classe alla riga se è in giacenza per evidenziarla
-                if (mov['⚠️ Attenzione']) {
-                    row.classList.add('giacenza-row');
-                }
                 
                 row.innerHTML = `
                     <td>${mov.id}</td>
@@ -775,7 +822,6 @@
         }
 
         async function calculateAndRenderSummaries(globalData, filteredData) {
-             // 1. Totali Globali (Meglio farli fare al DB per accuratezza)
             const { data: globalSums, error: errGlobal } = await supabase
                 .from('movimenti')
                 .select('sum(acquisto), sum(vendita)')
@@ -793,7 +839,6 @@
                 <p>Profitto Netto: <span class="${profit_class}">${formatCurrency(profitto)}</span></p>
             `;
             
-            // 2. Totali Filtrati (basati sui dati visualizzati nella tabella)
             let da = filteredData.reduce((sum, mov) => sum + (mov.acquisto || 0), 0);
             let dv = filteredData.reduce((sum, mov) => sum + (mov.vendita || 0), 0);
             let dp = dv - da;
@@ -812,13 +857,16 @@
         // =========================================================
         
         document.addEventListener('DOMContentLoaded', () => {
+            // Imposta la data di acquisto predefinita a oggi
+            document.getElementById('data-acquisto').value = new Date().toISOString().split('T')[0];
+            
             // 1. Setup dei Tab
             setupTabs();
             
             // 2. Setup Sincronizzazione e Caricamento Iniziale
             loadQueue(); 
             loadDataAndRender(); 
-            updateManagementButtons(); // Inizializza i bottoni a disabilitato
+            updateManagementButtons(); 
             
             // Listener per il ritorno della rete (tenta la sincronizzazione)
             window.addEventListener('online', attemptSync);
@@ -838,28 +886,22 @@
 
                 const currentId = parseInt(row.getAttribute('data-id'));
 
-                // Logica di deselezione/selezione
                 if (selectedRowId === currentId) {
-                    // Cliccato sulla riga già selezionata -> Deseleziona
                     row.classList.remove('selected-row');
                     clearManagementFields();
                     setStatus(`ℹ️ Nessun movimento selezionato.`);
                     return;
                 }
                 
-                // Rimuovi la selezione precedente
                 document.querySelectorAll('.selected-row').forEach(prevSelected => {
                     prevSelected.classList.remove('selected-row');
                 });
                 
-                // Aggiorna la selezione
                 selectedRowId = currentId;
                 row.classList.add('selected-row');
 
-                // Estrai i dati
                 const columns = Array.from(row.querySelectorAll('td')).map(td => td.textContent.trim());
                 
-                // Popola i campi del tab "Gestione"
                 idModificaInput.value = columns[0];
                 nuovoArticoloInput.value = columns[2];
                 nuovoAcquistoInput.value = columns[3].replace('€', ''); 
@@ -867,10 +909,7 @@
                 
                 setStatus(`ℹ️ ID ${selectedRowId} selezionato per la modifica.`);
                 
-                // Attiva i bottoni
                 updateManagementButtons();
-
-                // Passa automaticamente al tab di gestione
                 document.querySelector('.tab-button[data-tab="tab-gestione"]').click();
             });
         });
