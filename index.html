@@ -416,6 +416,13 @@
         // Mantiene traccia della riga attualmente selezionata
         let selectedRowId = null;
 
+        // =========================================================
+        // === LOGICA BACKGROUND SYNC OFFLINE (NUOVE VARIABILI) ===
+        // =========================================================
+        
+        let offlineQueue = [];
+        const QUEUE_KEY = 'supabase_offline_queue';
+
         // === PWA Service Worker Registration ===
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
@@ -425,6 +432,84 @@
             });
         }
         
+        // =========================================================
+        // === FUNZIONI OFFLINE SYNC (NUOVE FUNZIONI) ===
+        // =========================================================
+
+        function saveQueue() {
+            localStorage.setItem(QUEUE_KEY, JSON.stringify(offlineQueue));
+            updateOfflineStatus();
+        }
+
+        function loadQueue() {
+            const storedQueue = localStorage.getItem(QUEUE_KEY);
+            if (storedQueue) {
+                offlineQueue = JSON.parse(storedQueue);
+            }
+            updateOfflineStatus();
+        }
+
+        function updateOfflineStatus() {
+            const count = offlineQueue.length;
+            if (count > 0) {
+                setStatus(`⚠️ OFFLINE: ${count} operazioni in attesa di sincronizzazione!`);
+                // Forzare lo stato a offline in caso di coda non vuota
+                document.body.style.border = '5px solid var(--color-warning)'; 
+            } else {
+                 document.body.style.border = 'none'; 
+            }
+        }
+        
+        async function attemptSync() {
+            if (offlineQueue.length === 0) {
+                setStatus("✅ Rete online. Nessuna operazione in attesa.");
+                return;
+            }
+            
+            setStatus(`⏳ Rete online. Tentativo di sincronizzare ${offlineQueue.length} operazioni in attesa...`);
+            let successfulSyncs = 0;
+            let errors = 0;
+            const originalQueue = [...offlineQueue]; // Lavoriamo su una copia
+
+            for (let i = 0; i < originalQueue.length; i++) {
+                const item = originalQueue[i];
+                
+                try {
+                    let result;
+                    
+                    if (item.action === 'INSERT') {
+                        result = await supabase.from('movimenti').insert([item.payload]).select();
+                    } else if (item.action === 'UPDATE') {
+                        result = await supabase.from('movimenti').update(item.payload).eq('id', item.id);
+                    } else if (item.action === 'DELETE') {
+                        result = await supabase.from('movimenti').delete().eq('id', item.id);
+                    }
+                    
+                    if (result && !result.error) {
+                        successfulSyncs++;
+                        // Rimuovi l'elemento dalla coda globale solo in caso di successo
+                        offlineQueue = offlineQueue.filter(qItem => qItem !== item); 
+                    } else {
+                        errors++;
+                        console.error("Errore durante la risincronizzazione:", result.error);
+                    }
+                    
+                } catch (e) {
+                    errors++;
+                    console.error("Errore di rete durante la risincronizzazione.", e);
+                }
+            }
+
+            saveQueue(); // Salva la coda aggiornata
+            await refreshData(); // Ricarica la UI
+            
+            if (successfulSyncs > 0) {
+                setStatus(`✅ Sincronizzazione completata: ${successfulSyncs} operazioni riuscite. ${errors} fallite (rimaste in coda).`);
+            } else if (errors > 0) {
+                setStatus(`❌ Tentativo di sincronizzazione fallito. Riprova più tardi. ${errors} operazioni in attesa.`);
+            }
+        }
+
         // === UTILITY FUNCTIONS ===
 
         function setStatus(message) {
@@ -477,7 +562,8 @@
             const { data: movimenti, error } = await query;
 
             if (error) {
-                setStatus(`❌ Errore caricamento: ${error.message}`);
+                // Non accodiamo le letture, ma avvisiamo
+                setStatus(`❌ Errore caricamento: ${error.message} (Se offline, i dati non sono recenti).`);
                 return;
             }
 
@@ -597,7 +683,14 @@
                 .select(); // Richiede i dati inseriti per l'ID
 
             if (error) {
-                setStatus(`❌ Errore registrazione: ${error.message}`);
+                 // **=== LOGICA OFFLINE: INSERIMENTO ===**
+                if (error.message.includes("Failed to fetch")) {
+                    offlineQueue.push({ action: 'INSERT', payload: newRow, tempId: Date.now() }); // Usiamo un tempId per la coda
+                    saveQueue();
+                    setStatus(`⚠️ Acquisito salvato offline! In coda: ${offlineQueue.length} op.`);
+                } else {
+                    setStatus(`❌ Errore registrazione: ${error.message}`);
+                }
             } else {
                 setStatus(`✅ Acquisto registrato (ID ${newData[0].id})`);
                 await refreshData();
@@ -654,7 +747,14 @@
                 .eq('id', idToEdit);
 
             if (error) {
-                setStatus(`❌ Errore aggiornamento: ${error.message}`);
+                // **=== LOGICA OFFLINE: AGGIORNAMENTO ===**
+                if (error.message.includes("Failed to fetch")) {
+                    offlineQueue.push({ action: 'UPDATE', id: idToEdit, payload: updatePayload });
+                    saveQueue();
+                    setStatus(`⚠️ Modifica/Vendita salvata offline! In coda: ${offlineQueue.length} op.`);
+                } else {
+                    setStatus(`❌ Errore aggiornamento: ${error.message}`);
+                }
             } else {
                 setStatus(messages.join(" • "));
                 await refreshData();
@@ -682,7 +782,14 @@
                 .eq('id', idToDelete);
 
             if (error) {
-                setStatus(`❌ Errore eliminazione: ${error.message}`);
+                // **=== LOGICA OFFLINE: ELIMINAZIONE ===**
+                if (error.message.includes("Failed to fetch")) {
+                    offlineQueue.push({ action: 'DELETE', id: idToDelete });
+                    saveQueue();
+                    setStatus(`⚠️ Eliminazione salvata offline! In coda: ${offlineQueue.length} op.`);
+                } else {
+                    setStatus(`❌ Errore eliminazione: ${error.message}`);
+                }
             } else {
                 setStatus(`🗑️ Movimento ID ${idToDelete} eliminato.`);
                 await refreshData();
@@ -700,6 +807,7 @@
             const filterDate = document.getElementById('filtro-data').value;
             const filterStato = document.getElementById('filtro-stato').value;
             await loadDataAndRender(filterDate, filterStato);
+            updateOfflineStatus(); // Aggiorna lo stato visivo della coda
         }
 
         // Funzione di reset
@@ -713,8 +821,12 @@
         
         document.addEventListener('DOMContentLoaded', () => {
             setupTabs();
-            // Carica i dati all'avvio
+            // === NUOVO: Carica la coda all'avvio e setta il listener per il ritorno della rete ===
+            loadQueue(); 
             loadDataAndRender(); 
+            
+            // Listener per il ritorno della rete (tenta la sincronizzazione)
+            window.addEventListener('online', attemptSync);
             
             // Listener pulsanti CRUD
             document.getElementById('btn-acquisto').addEventListener('click', addAcquisto);
