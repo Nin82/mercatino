@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestione Inventario PWA</title>
+    <title>Gestione Inventario1</title>
 
 
 
@@ -401,13 +401,10 @@ const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         if ('serviceWorker' in navigator) {
     window.addEventListener('load', function() {
         navigator.serviceWorker.register('/mercatino/sw.js')
-        .then(registration => {
-            console.log('✅ Service Worker registrato:', registration.scope);
+        .then(reg => console.log('✅ SW registrato:', reg.scope))
+        .catch(err => console.error('❌ SW fallito:', err));
         })
-        .catch(err => {
-            console.error('❌ SW fallito:', err);
-        });
-    });
+
 }
         // --- Gestione Coda Offline (Client-side) ---
         function saveQueue() {
@@ -894,4 +891,5 @@ const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     </script>
 </body>
 </html>
+
 
