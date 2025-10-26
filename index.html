@@ -388,14 +388,12 @@ const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         const QUEUE_KEY = 'supabase_offline_queue';
 
         // --- PWA Service Worker Registration ---
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                // Assicurati che il percorso sia corretto
-                navigator.serviceWorker.register('/sw.js')
-                    .then(registration => console.log('SW registrato con successo:', registration.scope))
-                    .catch(error => console.error('SW fallito:', error));
-            });
-        }
+        
+           if ('serviceWorker' in navigator) {
+           navigator.serviceWorker.register('/mercatino/sw.js')
+           .then(reg => console.log('✅ Service Worker registrato:', reg.scope))
+          .catch(err => console.error('❌ Errore SW:', err));
+        	}
         
         // --- Gestione Coda Offline (Client-side) ---
         function saveQueue() {
