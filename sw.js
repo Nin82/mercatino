@@ -1,60 +1,39 @@
-// ======================================================
-// 🌐 Service Worker per PWA Gestione Magazzino
-// ======================================================
-
-const CACHE_NAME = 'magazzino-v1';
+const CACHE_NAME = 'contabilita-v3';
 const urlsToCache = [
-  '/mercatino/',
+  '/',
   '/mercatino/index.html',
   '/mercatino/manifest.json',
-  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
-  '/mercatino/icons/icon-192.png',
-  '/mercatino/icons/icon-512.png'
+  '/mercatino/icons/icon1.jpg',
+  '/mercatino/icons/icon2.jpg',
+  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2'
 ];
 
-// 1️⃣ Installazione — pre-caching della shell
-self.addEventListener('install', event => {
-  console.log('[SW] Installazione... Pre-caching shell');
+self.addEventListener('install', (event) => {
+  console.log('[SW] Installazione. Pre-caching della shell...');
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(cache => cache.addAll(urlsToCache))
       .catch(err => console.error('[SW] Errore pre-caching:', err))
   );
-  self.skipWaiting();
 });
 
-// 2️⃣ Attivazione — pulizia cache obsolete
-self.addEventListener('activate', event => {
+self.addEventListener('activate', (event) => {
   console.log('[SW] Attivato. Pulizia cache obsolete...');
-  const keep = [CACHE_NAME];
   event.waitUntil(
-    caches.keys().then(names =>
-      Promise.all(names.map(n => {
-        if (!keep.includes(n)) {
-          console.log('[SW] Eliminata cache:', n);
-          return caches.delete(n);
+    caches.keys().then(keys => Promise.all(
+      keys.map(key => {
+        if (key !== CACHE_NAME) {
+          console.log('[SW] Eliminata cache:', key);
+          return caches.delete(key);
         }
-      }))
-    )
+      })
+    ))
   );
-  self.clients.claim();
 });
 
-// 3️⃣ Fetch — cache-first, fallback rete
-self.addEventListener('fetch', event => {
-  if (event.request.method !== 'GET') return;
+self.addEventListener('fetch', (event) => {
   event.respondWith(
-    caches.match(event.request).then(resp => {
-      if (resp) return resp;
-      return fetch(event.request).then(netResp => {
-        // Cache dinamica solo per asset del tuo dominio
-        if (event.request.url.startsWith(self.location.origin)) {
-          caches.open(CACHE_NAME).then(c => c.put(event.request, netResp.clone()));
-        }
-        return netResp;
-      }).catch(() => caches.match('/mercatino/index.html'));
-    })
+    caches.match(event.request)
+      .then(resp => resp || fetch(event.request))
   );
 });
-
-console.log('[SW] Registrato correttamente 🎯');
