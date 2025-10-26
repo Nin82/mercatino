@@ -4,7 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gestione Inventario PWA</title>
+
+
+
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+
+    <link rel="manifest" href="/mercatino/manifest.json">
+    <meta name="theme-color" content="#007bff">
+    <link rel="icon" href="/mercatino/icone/icon1.jpg" type="image/jpeg" sizes="192x192">
+
+
+
     <style>
         /* CSS rimane invariato */
         :root {
@@ -387,14 +398,17 @@ const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         let offlineQueue = [];
         const QUEUE_KEY = 'supabase_offline_queue';
 
-        // --- PWA Service Worker Registration ---
-        
-           if ('serviceWorker' in navigator) {
-           navigator.serviceWorker.register('/mercatino/sw.js')
-           .then(reg => console.log('✅ Service Worker registrato:', reg.scope))
-          .catch(err => console.error('❌ Errore SW:', err));
-        	}
-        
+        if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+        navigator.serviceWorker.register('/mercatino/sw.js')
+        .then(registration => {
+            console.log('✅ Service Worker registrato:', registration.scope);
+        })
+        .catch(err => {
+            console.error('❌ SW fallito:', err);
+        });
+    });
+}
         // --- Gestione Coda Offline (Client-side) ---
         function saveQueue() {
             localStorage.setItem(QUEUE_KEY, JSON.stringify(offlineQueue));
