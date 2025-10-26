@@ -1,18 +1,20 @@
 {
-  "name": "Gestione Inventario PWA",
+  "name": "Gestione mercatino",
   "short_name": "InventarioPWA",
+  "description": "App per gestire acquisti, vendite e inventario offline/online",
   "start_url": "/mercatino/index.html",
   "display": "standalone",
   "background_color": "#f8f9fa",
   "theme_color": "#007bff",
+  "orientation": "portrait",
   "icons": [
     {
-      "src": "icons/icon1.jpg",
+      "src": "/mercatino/icons/icon1.jpg",
       "sizes": "192x192",
       "type": "image/jpeg"
     },
     {
-      "src": "icons/icon2.jpg",
+      "src": "/mercatino/icons/icon2.jpg",
       "sizes": "512x512",
       "type": "image/jpeg"
     }
