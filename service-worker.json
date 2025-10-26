@@ -13,78 +13,112 @@ const urlsToCache = [
   '/images/icon2.jpg' 
 ];
 
-// 1. Installazione del Service Worker: Apre la cache e scarica i file essenziali
+// 1. Installazione e Attivazione (Rimane identica per la cache statica)
 self.addEventListener('install', event => {
-  console.log('[Service Worker] Installazione. Caching shell app...');
+  console.log('[SW] Installazione. Caching shell app...');
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(cache => {
-        return cache.addAll(urlsToCache);
-      })
-      .catch(err => {
-        console.error('[Service Worker] Errore durante il caching:', err);
-      })
+      .then(cache => cache.addAll(urlsToCache))
+      .catch(err => console.error('[SW] Errore caching:', err))
   );
-  self.skipWaiting(); // Forza l'attivazione immediata
+  self.skipWaiting(); 
 });
 
-// 2. Attivazione del Service Worker: Pulisce le vecchie cache
 self.addEventListener('activate', event => {
-  console.log('[Service Worker] Attivato. Pulizia vecchie cache...');
+  console.log('[SW] Attivato. Pulizia vecchie cache...');
   event.waitUntil(
     caches.keys().then(cacheNames => {
       return Promise.all(
-        cacheNames.filter(cacheName => {
-          // Rimuove tutte le cache che non corrispondono al nome corrente
-          return cacheName !== CACHE_NAME;
-        }).map(cacheName => {
-          return caches.delete(cacheName);
-        })
+        cacheNames.filter(cacheName => cacheName !== CACHE_NAME)
+                  .map(cacheName => caches.delete(cacheName))
       );
     })
   );
-  return self.clients.claim(); // Prende il controllo subito
+  return self.clients.claim();
 });
 
-// 3. Strategia di Fetch: Cache, then Network (per i file statici)
-// Network, then Cache (per le chiamate API Supabase)
+// 2. Logica di Intercettazione e Background Sync per Supabase
 self.addEventListener('fetch', event => {
   const requestUrl = new URL(event.request.url);
+  const isSupabaseRequest = requestUrl.host.includes('supabase.co');
 
-  // Strategia per le risorse Supabase (Database/API): Network Only
-  // Vogliamo sempre il dato più aggiornato dal server
-  if (requestUrl.host.includes('supabase.co') || requestUrl.host.includes('functions.supabase.co')) {
-    event.respondWith(fetch(event.request).catch(function() {
-        // Se la rete è offline e non è un asset statico, non tentiamo la cache
-        return new Response("Sei offline. Impossibile caricare i dati in tempo reale.");
+  // Gestione delle richieste di SCRITTURA (POST, PATCH, DELETE) a Supabase
+  if (isSupabaseRequest && ['POST', 'PATCH', 'DELETE'].includes(event.request.method)) {
+      // Selezioniamo la strategia 'Network Only' e gestiamo il fallimento con Background Sync
+      event.respondWith(
+          fetch(event.request.clone())
+              .catch(async () => {
+                  console.log('[SW] Fallimento scrittura offline. Registrazione Background Sync.');
+                  
+                  // Creazione di un oggetto per l'accodamento
+                  const requestDetails = {
+                      url: event.request.url,
+                      method: event.request.method,
+                      headers: event.request.headers ? [...event.request.headers] : {},
+                      body: event.request.body ? await event.request.clone().text() : null
+                  };
+                  
+                  // Invia i dettagli della richiesta al client (index.html) per la gestione UI
+                  self.clients.matchAll().then(clients => {
+                      clients.forEach(client => {
+                          client.postMessage({
+                              type: 'BACKGROUND_SYNC_REQUEST',
+                              details: requestDetails
+                          });
+                      });
+                  });
+                  
+                  // Restituisce un errore simulato (così l'app sa che ha fallito)
+                  return new Response(null, { status: 503, statusText: "Offline Sync Required" });
+              })
+      );
+      return;
+  }
+  
+  // Gestione delle richieste di LETTURA (GET) a Supabase: Network Only (per i dati in tempo reale)
+  if (isSupabaseRequest) {
+    event.respondWith(fetch(event.request).catch(() => {
+        // Quando la rete è offline, non possiamo mostrare i dati aggiornati
+        console.log('[SW] Fallimento lettura offline. I dati mostrati potrebbero non essere recenti.');
+        return new Response(null, { status: 503, statusText: "Network Unavailable" });
     }));
     return;
   }
 
-  // Strategia per gli assets statici (HTML, CSS, JS, Immagini): Cache First
+  // Strategia per gli assets statici: Cache First (per l'interfaccia)
   event.respondWith(
-    caches.match(event.request)
-      .then(response => {
-        // Se l'asset è in cache, lo restituisce subito
-        if (response) {
-          return response;
-        }
-        // Altrimenti, va in rete e aggiunge l'asset alla cache per la prossima volta
-        return fetch(event.request).then(
-          response => {
-            // Controlla se abbiamo ricevuto una risposta valida
-            if(!response || response.status !== 200 || response.type !== 'basic') {
-              return response;
-            }
-            // Clona la risposta perché il corpo può essere letto una sola volta
-            const responseToCache = response.clone();
-            caches.open(CACHE_NAME)
-              .then(cache => {
-                cache.put(event.request, responseToCache);
-              });
-            return response;
-          }
-        );
-      })
+    caches.match(event.request).then(response => response || fetch(event.request))
   );
 });
+
+// 3. Logica di Background Sync: Rispedisce le richieste accodate quando la rete torna
+self.addEventListener('sync', event => {
+    if (event.tag === 'supabase-sync-tag') {
+        console.log('[SW] Background Sync attivato. Tentativo di rispedire le richieste in attesa.');
+        event.waitUntil(resyncQueuedRequests());
+    }
+});
+
+async function resyncQueuedRequests() {
+    // Questa funzione è un placeholder. Nel codice reale, dovresti
+    // 1. Leggere l'elenco delle richieste in attesa salvate in IndexedDB.
+    // 2. Per ogni richiesta, ricostruire l'oggetto Request e inviarla con fetch().
+    // 3. Eliminare la richiesta dalla coda se ha successo.
+    
+    // Dato che non abbiamo IndexedDB, questo sarà il punto in cui la tua logica
+    // dovrà integrare un meccanismo di accodamento lato client o un'implementazione completa 
+    // della Workbox Background Sync Library (che gestisce tutto in automatico).
+
+    // Per ora, ci affidiamo al messaggio inviato al client (index.html)
+    // per avvisare che il sync è ora possibile.
+    console.warn("[SW] L'implementazione completa di 'resyncQueuedRequests' richiede IndexedDB o Workbox. Avviso l'app frontend.");
+    
+    self.clients.matchAll().then(clients => {
+        clients.forEach(client => {
+            client.postMessage({
+                type: 'SYNC_NOW_POSSIBLE',
+                message: 'La rete è tornata. Sincronizza i dati in sospeso ora.'
+            });
+        });
+    });
+}
