@@ -354,10 +354,12 @@
 
     <script>
         // === CONFIGURAZIONE SUPABASE (SOSTITUISCI CON LE TUE CHIAVI) ===
-        // !!! SOSTITUISCI CON I TUOI VALORI REALI !!!
-        const SUPABASE_URL = 'https://zyrlkjxxqzweetlkehrz.supabase.co'; 
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp5cmxranh4cXp3ZWV0bGtlaHJ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE0NDg2OTEsImV4cCI6MjA3NzAyNDY5MX0.Gw23ftfgXfpZ_JKTz29txmLuIgnJCcuj8O1SMNh6qRc';
-        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// !!! I valori sono ora corretti, ma l'assegnazione è errata !!!
+const SUPABASE_URL = 'https://zyrlkjxxqzweetlkehrz.supabase.co'; 
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp5cmxranh4cXp3ZWV0bGtlaHJ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE0NDg2OTEsImV4cCI6MjA3NzAzNDY5MX0.Gw23ftfgXfpZ_JKTz29txmLuIgnJCcuj8O1SMNh6qRc'; // Ho aggiornato l'exp
+
+// SOLUZIONE: Rinomina la costante in 'supabaseClient' e usa l'oggetto globale 'supabase' (minuscolo) per la creazione
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
         // === VARIABILI GLOBAL UI ===
         const tableBody = document.getElementById('table-body');
@@ -879,3 +881,4 @@
     </script>
 </body>
 </html>
+
