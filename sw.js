@@ -3,8 +3,8 @@ const urlsToCache = [
   '/',
   '/mercatino/index.html',
   '/mercatino/manifest.json',
-  '/mercatino/icons/icon1.jpg',
-  '/mercatino/icons/icon2.jpg',
+  '/mercatino/icons/icon-192.png',
+  '/mercatino/icons/icon-512.png',
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2'
 ];
 
