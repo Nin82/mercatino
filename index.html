@@ -1,279 +1,273 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestione Magazzino PWA</title>
-    <link rel="manifest" href="./manifest.json">
-    <meta name="theme-color" content="#4f46e5">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gestione Magazzino</title>
 
-    <!-- Supabase -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#4f46e5">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-    <style>
-        /* Reset & root variables */
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        :root {
-            --primary: #4f46e5;
-            --secondary: #6c757d;
-            --success: #28a745;
-            --danger: #dc3545;
-            --warning: #ffc107;
-            --background: #f8fafc;
-            --surface: #fff;
-            --text: #212529;
-            --radius: 8px;
-            --shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }
+<style>
+:root {
+  --primary: #4f46e5;
+  --success: #16a34a;
+  --danger: #dc2626;
+  --warning: #f59e0b;
+  --surface: #fff;
+  --bg: #f8fafc;
+}
+body {
+  font-family: system-ui, sans-serif;
+  background: var(--bg);
+  color: #111;
+  margin: 0;
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 10px;
+}
+.container {
+  width: 100%;
+  max-width: 1200px;
+  background: var(--surface);
+  border-radius: 16px;
+  box-shadow: 0 2px 10px rgba(0,0,0,.1);
+  overflow: hidden;
+  padding: 20px;
+}
+h1 { text-align: center; color: var(--primary); margin-top: 0; }
 
-        body {
-            font-family: Arial, sans-serif;
-            background-color: var(--background);
-            color: var(--text);
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-        }
+.tabs { display: flex; margin-bottom: 10px; }
+.tab-button {
+  flex: 1;
+  background: none;
+  border: none;
+  padding: 10px;
+  font-weight: bold;
+  cursor: pointer;
+  color: #555;
+  border-bottom: 3px solid transparent;
+}
+.tab-button.active {
+  color: var(--primary);
+  border-color: var(--primary);
+}
+.tab-content { display: none; }
+.tab-content.active { display: block; }
 
-        .container {
-            max-width: 1400px;
-            width: 95%;
-            margin: 20px auto;
-            background: var(--surface);
-            border-radius: var(--radius);
-            box-shadow: var(--shadow);
-            padding: 20px;
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-        }
+form input, form select {
+  width: 100%; padding: 8px;
+  border: 1px solid #ccc; border-radius: 6px;
+  margin-bottom: 8px;
+}
+button {
+  border: none; border-radius: 6px;
+  padding: 10px 15px; color: white;
+  cursor: pointer; font-weight: bold;
+  margin-right: 5px; margin-top: 5px;
+}
+.btn-primary { background: var(--primary); }
+.btn-success { background: var(--success); }
+.btn-danger { background: var(--danger); }
+.btn-warning { background: var(--warning); color: black; }
 
-        h1 {
-            color: var(--primary);
-            text-align: center;
-            margin-bottom: 20px;
-        }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+}
+th, td { padding: 8px; border: 1px solid #ddd; text-align: center; }
+th { background: var(--primary); color: white; }
+tr.selected-row { background: #e0e7ff; }
 
-        /* Tabs */
-        .tabs { display: flex; border-bottom: 2px solid #ddd; margin-bottom: 20px; }
-        .tab-button {
-            flex: 1; text-align: center; padding: 10px;
-            cursor: pointer; font-weight: bold;
-            background: transparent; border: none;
-            color: var(--secondary); transition: 0.3s;
-        }
-        .tab-button.active { color: var(--primary); border-bottom: 3px solid var(--primary); }
-        .tab-content { display: none; padding: 10px 0; }
-        .tab-content.active { display: block; }
-
-        /* Forms */
-        .form-row { display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 15px; }
-        .form-group { flex: 1; min-width: 150px; display: flex; flex-direction: column; }
-        .form-group label { margin-bottom: 5px; font-weight: 600; }
-        .form-group input, .form-group select { padding: 8px; border-radius: 4px; border: 1px solid #ccc; }
-
-        button { padding: 10px 15px; border-radius: 4px; border: none; cursor: pointer; font-weight: bold; }
-        button:disabled { opacity: 0.6; cursor: not-allowed; }
-
-        .btn-primary { background: var(--primary); color: #fff; }
-        .btn-success { background: var(--success); color: #fff; }
-        .btn-danger { background: var(--danger); color: #fff; }
-        .btn-secondary { background: var(--secondary); color: #fff; }
-
-        .btn-toolbar { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
-
-        /* Status & summary */
-        #status-output { width: 100%; padding: 10px; border-radius: 4px; border: 1px solid var(--secondary); margin-bottom: 20px; background: #eee; }
-
-        .summary-container { display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 20px; }
-        .summary-box { flex: 1; min-width: 200px; background: #e9ecef; border-radius: var(--radius); padding: 10px; box-shadow: var(--shadow); }
-        .summary-value { font-weight: bold; }
-        .profit-positive { color: var(--success); font-weight: bold; }
-        .profit-negative { color: var(--danger); font-weight: bold; }
-
-        /* Table in card */
-        .table-card { overflow-x: auto; background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); padding: 10px; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background: var(--primary); color: #fff; }
-        tr:nth-child(even) { background: #f2f2f2; }
-        tr.selected-row { background: var(--warning) !important; }
-
-        @media (max-width: 768px) {
-            .form-row { flex-direction: column; }
-        }
-    </style>
+@media (max-width: 768px) {
+  table, thead, tbody, th, td, tr { display: block; }
+  th { display: none; }
+  td { border: none; border-bottom: 1px solid #eee; }
+}
+</style>
 </head>
 <body>
 <div class="container">
-    <h1>Gestione Magazzino PWA</h1>
-    <input type="text" id="status-output" value="Inizializzazione..." readonly>
+  <h1>📦 Gestione Magazzino</h1>
+  <input type="text" id="status-output" readonly style="width:100%;margin-bottom:10px;">
 
-    <div class="tabs">
-        <button class="tab-button active" data-tab="tab-acquisti">Nuovo Acquisto</button>
-        <button class="tab-button" data-tab="tab-gestione">Modifica / Vendita / Elimina</button>
-        <button class="tab-button" data-tab="tab-inventario">Inventario & Filtri</button>
-    </div>
+  <div class="tabs">
+    <button class="tab-button active" data-tab="tab-acquisti">Acquisti</button>
+    <button class="tab-button" data-tab="tab-gestione">Gestione</button>
+    <button class="tab-button" data-tab="tab-lista">Lista</button>
+  </div>
 
-    <!-- Tab Acquisti -->
-    <div id="tab-acquisti" class="tab-content active">
-        <div class="form-row">
-            <div class="form-group"><label>Data Acquisto</label><input type="date" id="data-acquisto"></div>
-            <div class="form-group"><label>Articolo</label><input type="text" id="articolo-acquisto" placeholder="Nome Articolo"></div>
-        </div>
-        <div class="form-row">
-            <div class="form-group"><label>Prezzo Acquisto (€)</label><input type="number" step="0.01" id="prezzo-acquisto"></div>
-            <div class="form-group"><label>Guadagno Previsto (€)</label><input type="number" step="0.01" id="guadagno-previsto"></div>
-        </div>
-        <button class="btn-primary" id="btn-acquisto">Registra Acquisto</button>
-    </div>
+  <!-- TAB: ACQUISTI -->
+  <div id="tab-acquisti" class="tab-content active">
+    <h3>➕ Registra Acquisto</h3>
+    <form>
+      <label>Data</label>
+      <input type="date" id="data-acquisto">
+      <label>Articolo</label>
+      <input type="text" id="articolo-acquisto">
+      <label>Prezzo (€)</label>
+      <input type="number" id="prezzo-acquisto" step="0.01">
+      <label>Guadagno Previsto (€)</label>
+      <input type="number" id="guadagno-previsto" step="0.01">
+      <button type="button" id="btn-acquisto" class="btn-primary">💾 Salva Acquisto</button>
+    </form>
+  </div>
 
-    <!-- Tab Gestione -->
-    <div id="tab-gestione" class="tab-content">
-        <div class="form-row">
-            <div class="form-group"><label>ID Movimento</label><input type="text" id="id-modifica" readonly></div>
-            <div class="form-group"><label>Nuovo Articolo</label><input type="text" id="nuovo-articolo"></div>
-            <div class="form-group"><label>Nuovo Prezzo Acquisto</label><input type="number" step="0.01" id="nuovo-acquisto"></div>
-            <div class="form-group"><label>Prezzo Vendita</label><input type="number" step="0.01" id="prezzo-vendita"></div>
-        </div>
-        <div class="btn-toolbar">
-            <button class="btn-secondary" id="btn-modifica" disabled>Modifica</button>
-            <button class="btn-success" id="btn-vendita" disabled>Registra Vendita</button>
-            <button class="btn-danger" id="btn-elimina" disabled>Elimina</button>
-        </div>
+  <!-- TAB: GESTIONE -->
+  <div id="tab-gestione" class="tab-content">
+    <h3>🧾 Gestione Movimento</h3>
+    <label>ID Movimento</label>
+    <input type="text" id="id-modifica" readonly>
+    <label>Articolo</label>
+    <input type="text" id="nuovo-articolo">
+    <label>Prezzo Acquisto (€)</label>
+    <input type="number" id="nuovo-acquisto" step="0.01">
+    <label>Prezzo Vendita (€)</label>
+    <input type="number" id="prezzo-vendita" step="0.01">
+    <div>
+      <button id="btn-modifica" class="btn-warning">✏️ Modifica</button>
+      <button id="btn-vendita" class="btn-success">💰 Registra Vendita</button>
+      <button id="btn-elimina" class="btn-danger">🗑️ Elimina</button>
     </div>
+  </div>
 
-    <!-- Tab Inventario -->
-    <div id="tab-inventario" class="tab-content">
-        <div class="form-row">
-            <div class="form-group"><label>Filtra Data</label><input type="date" id="filtro-data"></div>
-            <div class="form-group"><label>Filtra Stato</label>
-                <select id="filtro-stato">
-                    <option value="Tutto">Tutto</option>
-                    <option value="Acquistato">Acquistato</option>
-                    <option value="Venduto">Venduto</option>
-                    <option value="Giacenza">Giacenza >14gg</option>
-                </select>
-            </div>
-        </div>
-        <div class="btn-toolbar">
-            <button class="btn-primary" id="btn-filtra">Applica Filtri</button>
-            <button class="btn-secondary" id="btn-reset-all">Reset Filtri</button>
-        </div>
-        <div class="summary-container">
-            <div id="global-output" class="summary-box"></div>
-            <div id="daily-output" class="summary-box"></div>
-        </div>
+  <!-- TAB: LISTA -->
+  <div id="tab-lista" class="tab-content">
+    <h3>📋 Movimenti</h3>
+    <div>
+      <label>Data:</label><input type="date" id="filtro-data">
+      <label>Stato:</label>
+      <select id="filtro-stato">
+        <option>Tutto</option>
+        <option>Acquistato</option>
+        <option>Venduto</option>
+        <option>Giacenza</option>
+      </select>
+      <button id="btn-filtra" class="btn-primary">🔍 Filtra</button>
+      <button id="btn-reset-all" class="btn-warning">♻️ Reset</button>
     </div>
-
-    <h2>Movimenti Registrati</h2>
-    <div class="table-card">
-        <table>
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Data</th>
-                    <th>Articolo</th>
-                    <th>Acquisto</th>
-                    <th>Vendita</th>
-                    <th>Guadagno Previsto</th>
-                    <th>Stato</th>
-                    <th>Profitto Netto</th>
-                    <th>⚠️ Attenzione</th>
-                </tr>
-            </thead>
-            <tbody id="table-body"></tbody>
-        </table>
-    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th><th>Data</th><th>Articolo</th>
+          <th>Acquisto</th><th>Vendita</th><th>Guadagno</th><th>Stato</th><th>Profitto</th>
+        </tr>
+      </thead>
+      <tbody id="table-body"></tbody>
+    </table>
+  </div>
 </div>
 
 <script>
-    // === CONFIG SUPABASE ===
-    const SUPABASE_URL = 'https://zyrlkjxxqzweetlkehrz.supabase.co';
-    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp5cmxranh4cXp3ZWV0bGtlaHJ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE0NDg2OTEsImV4cCI6MjA3NzAyNDY5MX0.Gw23ftfgXfpZ_JKTz29txmLuIgnJCcuj8O1SMNh6qRc'; // metti la tua chiave anon
-    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-	
-    // Variabili globali
-    const tableBody = document.getElementById('table-body');
-    const statusOutput = document.getElementById('status-output');
-    const globalOutput = document.getElementById('global-output');
-    const dailyOutput = document.getElementById('daily-output');
-    let selectedRowId = null;
-    const btnVendita = document.getElementById('btn-vendita');
-    const btnModifica = document.getElementById('btn-modifica');
-    const btnElimina = document.getElementById('btn-elimina');
-    const idModificaInput = document.getElementById('id-modifica');
-    const nuovoArticoloInput = document.getElementById('nuovo-articolo');
-    const nuovoAcquistoInput = document.getElementById('nuovo-acquisto');
-    const prezzoVenditaInput = document.getElementById('prezzo-vendita');
+/* === CONFIG SUPABASE === */
+const SUPABASE_URL = 'https://zyrlkjxxqzweetlkehrz.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp5cmxranh4cXp3ZWV0bGtlaHJ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE0NDg2OTEsImV4cCI6MjA3NzAyNDY5MX0.Gw23ftfgXfpZ_JKTz29txmLuIgnJCcuj8O1SMNh6qRc';
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    // Offline queue
-    let offlineQueue = [];
-    const QUEUE_KEY = 'supabase_offline_queue';
+const tableBody = document.getElementById('table-body');
+const statusOutput = document.getElementById('status-output');
+let selectedRowId = null;
 
-    // Service Worker
-    if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-            navigator.serviceWorker.register('/mercatino/sw.js')
-            .then(reg => console.log('✅ SW registrato:', reg.scope))
-            .catch(err => console.error('❌ SW fallito:', err));
-        });
-    }
+function setStatus(msg){ statusOutput.value = msg; }
+function formatCurrency(v){ return "€" + parseFloat(v||0).toFixed(2); }
 
-    function setStatus(msg) { statusOutput.value = msg; }
-
-    // Tab logic
-    document.querySelectorAll('.tab-button').forEach(btn => {
-        btn.addEventListener('click', () => {
-            document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-            btn.classList.add('active');
-            document.getElementById(btn.dataset.tab).classList.add('active');
-        });
+function setupTabs(){
+  document.querySelectorAll('.tab-button').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      document.querySelectorAll('.tab-button').forEach(b=>b.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById(btn.dataset.tab).classList.add('active');
     });
-
-    // Funzioni CRUD e gestione offline...
-    // ... Tutto il codice che già hai inserito precedentemente qui ...
-
-    document.addEventListener('DOMContentLoaded', async () => {
-        document.getElementById('data-acquisto').value = new Date().toISOString().split('T')[0];
-        // inizializzazione tabs, queue, dati
-    });
-
-
-let deferredPrompt;
-
-window.addEventListener('beforeinstallprompt', (e) => {
-  e.preventDefault();
-  deferredPrompt = e;
-
-  const installBtn = document.createElement('button');
-  installBtn.textContent = '📲 Installa App';
-  installBtn.style.position = 'fixed';
-  installBtn.style.bottom = '20px';
-  installBtn.style.right = '20px';
-  installBtn.style.padding = '10px 15px';
-  installBtn.style.background = '#4f46e5';
-  installBtn.style.color = 'white';
-  installBtn.style.border = 'none';
-  installBtn.style.borderRadius = '8px';
-  installBtn.style.cursor = 'pointer';
-  installBtn.style.zIndex = '9999';
-  document.body.appendChild(installBtn);
-
-  installBtn.addEventListener('click', async () => {
-    installBtn.remove();
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    console.log('📲 Risposta utente:', outcome);
-    deferredPrompt = null;
   });
-});
+}
 
-window.addEventListener('appinstalled', () => {
-  console.log('✅ App installata con successo!');
-});
+/* === CRUD === */
+async function addAcquisto(){
+  const data = document.getElementById('data-acquisto').value || new Date().toISOString().split('T')[0];
+  const articolo = document.getElementById('articolo-acquisto').value.trim();
+  const prezzo = parseFloat(document.getElementById('prezzo-acquisto').value);
+  const guad = parseFloat(document.getElementById('guadagno-previsto').value)||0;
+  if(!articolo || isNaN(prezzo)){ setStatus("⚠️ Dati mancanti"); return; }
 
+  const { error } = await supabaseClient.from('movimenti').insert([{data,articolo,acquisto:prezzo,guadagno_previsto:guad,vendita:0,stato:'Acquistato'}]);
+  if(error) setStatus("❌ Errore: "+error.message);
+  else { setStatus("✅ Acquisto aggiunto"); refreshData(); }
+}
+
+async function updateMovimento(vendita=false){
+  if(!selectedRowId){ setStatus("⚠️ Seleziona una riga"); return; }
+  const payload={};
+  const art=document.getElementById('nuovo-articolo').value.trim();
+  const acq=parseFloat(document.getElementById('nuovo-acquisto').value);
+  const ven=parseFloat(document.getElementById('prezzo-vendita').value);
+  if(art) payload.articolo=art;
+  if(!isNaN(acq)) payload.acquisto=acq;
+  if(vendita||!isNaN(ven)){payload.vendita=ven;payload.stato='Venduto';}
+
+  const {error}=await supabaseClient.from('movimenti').update(payload).eq('id',selectedRowId);
+  if(error) setStatus("❌ "+error.message); else { setStatus("✅ Modificato"); refreshData(); }
+}
+
+async function deleteMovimento(){
+  if(!selectedRowId) return setStatus("⚠️ Seleziona una riga");
+  if(!confirm("Eliminare riga "+selectedRowId+"?")) return;
+  const {error}=await supabaseClient.from('movimenti').delete().eq('id',selectedRowId);
+  if(error) setStatus("❌ "+error.message); else { setStatus("🗑️ Eliminato"); refreshData(); }
+}
+
+/* === TAB LISTA === */
+async function refreshData(){
+  const { data, error } = await supabaseClient.from('movimenti').select('*').order('id',{ascending:false});
+  if(error){ setStatus("❌ "+error.message); return; }
+  renderTable(data);
+}
+function renderTable(data){
+  tableBody.innerHTML='';
+  data.forEach(m=>{
+    const row=document.createElement('tr');
+    row.innerHTML=`<td>${m.id}</td><td>${m.data}</td><td>${m.articolo}</td><td>${formatCurrency(m.acquisto)}</td>
+    <td>${formatCurrency(m.vendita)}</td><td>${formatCurrency(m.guadagno_previsto)}</td><td>${m.stato}</td><td>${formatCurrency((m.vendita||0)-(m.acquisto||0))}</td>`;
+    row.onclick=()=>{document.querySelectorAll('tr').forEach(r=>r.classList.remove('selected-row'));row.classList.add('selected-row');selectedRowId=m.id;setStatus("ID "+m.id+" selezionato");document.querySelector('.tab-button[data-tab=\"tab-gestione\"]').click();document.getElementById('id-modifica').value=m.id;document.getElementById('nuovo-articolo').value=m.articolo;document.getElementById('nuovo-acquisto').value=m.acquisto;document.getElementById('prezzo-vendita').value=m.vendita||'';};
+    tableBody.appendChild(row);
+  });
+}
+
+/* === PWA === */
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{
+    navigator.serviceWorker.register('/mercatino/sw.js')
+    .then(reg=>console.log('✅ SW registrato:',reg.scope))
+    .catch(err=>console.error('❌ SW fallito:',err));
+  });
+}
+let deferredPrompt;
+window.addEventListener('beforeinstallprompt',e=>{
+  e.preventDefault(); deferredPrompt=e;
+  const b=document.createElement('button');
+  b.textContent='📲 Installa App';
+  b.style='position:fixed;bottom:20px;right:20px;padding:10px 15px;background:#4f46e5;color:#fff;border:none;border-radius:8px;z-index:9999;';
+  document.body.appendChild(b);
+  b.addEventListener('click',async()=>{b.remove();deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null;});
+});
+window.addEventListener('appinstalled',()=>console.log('✅ App installata!'));
+
+/* === INIT === */
+document.addEventListener('DOMContentLoaded',()=>{
+  document.getElementById('data-acquisto').value=new Date().toISOString().split('T')[0];
+  setupTabs();
+  refreshData();
+  document.getElementById('btn-acquisto').onclick=addAcquisto;
+  document.getElementById('btn-modifica').onclick=()=>updateMovimento(false);
+  document.getElementById('btn-vendita').onclick=()=>updateMovimento(true);
+  document.getElementById('btn-elimina').onclick=deleteMovimento;
+  document.getElementById('btn-filtra').onclick=refreshData;
+  document.getElementById('btn-reset-all').onclick=refreshData;
+});
 </script>
 </body>
 </html>
