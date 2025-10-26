@@ -6,6 +6,7 @@
     <title>Gestione Inventario PWA</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
+        /* CSS rimane invariato */
         :root {
             --color-primary: #007bff;
             --color-secondary: #6c757d;
@@ -25,7 +26,7 @@
             padding: 20px;
             background-color: var(--color-background);
             color: var(--color-text);
-            transition: border 0.3s ease; /* Transizione per il bordo offline */
+            transition: border 0.3s ease;
         }
 
         .container {
@@ -378,7 +379,7 @@
 
 
         // =========================================================
-        // === LOGICA BACKGROUND SYNC OFFLINE (PWA) ===
+        // === LOGICA BACKGROUND SYNC OFFLINE (SIMPLIFICATA) ===
         // =========================================================
         
         let offlineQueue = [];
@@ -387,16 +388,9 @@
         // --- PWA Service Worker Registration ---
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
+                // Assicurati che il percorso sia corretto
                 navigator.serviceWorker.register('/sw.js')
-                    .then(registration => {
-                        console.log('SW registrato con successo:', registration.scope);
-                        // Aggiunge un listener per la gestione del Background Sync API
-                        if (registration.sync) {
-                            console.log("Background Sync supportato.");
-                        } else {
-                            console.log("Background Sync NON supportato. Utilizzo fallback 'online' event.");
-                        }
-                    })
+                    .then(registration => console.log('SW registrato con successo:', registration.scope))
                     .catch(error => console.error('SW fallito:', error));
             });
         }
@@ -418,7 +412,6 @@
         function updateOfflineStatus() {
             const count = offlineQueue.length;
             if (count > 0) {
-                // Notifica sia la coda che la connessione (se offline)
                 const connectionStatus = navigator.onLine ? 'Online' : 'Offline';
                 setStatus(`⚠️ ${connectionStatus}: ${count} operazioni in attesa di sincronizzazione!`);
                 document.body.style.border = '5px solid var(--color-warning)'; 
@@ -427,34 +420,34 @@
                     document.body.style.border = 'none'; 
                     setStatus("✅ Dati caricati e sincronizzati.");
                  } else {
-                     setStatus("❌ Rete disconnessa. I dati potrebbero non essere recenti.");
+                     setStatus("❌ Rete disconnessa. I dati mostrati non sono aggiornati.");
                      document.body.style.border = '5px solid var(--color-danger)'; 
                  }
             }
         }
         
-        // Funzione per il background sync (chiamata dal Service Worker o al ritorno dell'online)
+        // Funzione per il background sync (chiamata al ritorno dell'online)
         async function attemptSync() {
             if (offlineQueue.length === 0) {
-                setStatus("✅ Rete online. Nessuna operazione in attesa.");
+                if (navigator.onLine) setStatus("✅ Rete online. Nessuna operazione in attesa.");
                 return;
             }
             if (!navigator.onLine) {
-                 setStatus("❌ Impossibile sincronizzare. La rete è offline.");
-                 return;
+                 return; // Non fare nulla se offline
             }
             
             setStatus(`⏳ Rete online. Tentativo di sincronizzare ${offlineQueue.length} operazioni in attesa...`);
             let successfulSyncs = 0;
             let errors = 0;
+            // Prendi una copia della coda e svuota l'originale
             const itemsToProcess = [...offlineQueue]; 
-            offlineQueue = []; // Svuota la coda prima di iniziare
+            offlineQueue = []; 
 
             for (const item of itemsToProcess) {
                 try {
-                    let result = { error: null };
+                    let result = { error: { message: "Unknown error" } };
                     
-                    // Riprova l'azione CRUD originale con i payload salvati
+                    // Riprova l'azione CRUD
                     if (item.action === 'INSERT') {
                         result = await supabase.from('movimenti').insert([item.payload]).select();
                     } else if (item.action === 'UPDATE') {
@@ -467,20 +460,20 @@
                         successfulSyncs++;
                     } else {
                         errors++;
-                        // Se fallisce (es. errore di validazione DB), reinserisci nella coda
+                        // Se fallisce, reinserisci nella coda per il prossimo tentativo
                         offlineQueue.push(item);
-                        console.error("Errore durante la risincronizzazione:", result ? result.error : "Nessun risultato");
+                        console.error(`Errore durante la risincronizzazione ${item.action} (ID: ${item.id}):`, result.error.message);
                     }
                     
                 } catch (e) {
                     errors++;
-                    // Errore di rete (teoricamente non dovrebbe succedere qui, ma per sicurezza)
+                    // Errore di rete/fetch: reinserisci nella coda
                     offlineQueue.push(item);
-                    console.error("Errore di rete durante la risincronizzazione.", e);
+                    console.error("Errore di rete/fetch durante la risincronizzazione.", e);
                 }
             }
 
-            saveQueue(); 
+            saveQueue(); // Salva lo stato finale della coda
             await refreshData(); 
             
             if (successfulSyncs > 0) {
@@ -489,57 +482,6 @@
                 setStatus(`❌ Tentativo di sincronizzazione fallito. ${errors} operazioni in attesa.`);
             }
         }
-
-        // Gestisce i messaggi inviati dal Service Worker
-        navigator.serviceWorker.onmessage = async (event) => {
-            const data = event.data;
-
-            // 1. Il Service Worker ci dice che una richiesta di scrittura è fallita (siamo offline)
-            if (data.type === 'BACKGROUND_SYNC_REQUEST') {
-                const details = data.details;
-                console.log('[CLIENT] Ricevuto richiesta fallita da SW:', details);
-                
-                // --- Logica per ricostruire il payload dal 'details' e accodarlo ---
-                let action;
-                let payload = JSON.parse(details.body || '{}');
-                let id = null;
-
-                // Il Service Worker non conosce l'ID del movimento modificato/eliminato, dobbiamo estrarlo dalla URL
-                const urlParts = new URL(details.url).searchParams;
-                const eqId = urlParts.get('id');
-                if (eqId) {
-                    id = parseInt(eqId); 
-                    // Per le UPDATE e DELETE, l'ID è essenziale.
-                }
-
-                if (details.method === 'POST') {
-                    action = 'INSERT';
-                    // Per INSERT, payload è l'oggetto completo del movimento
-                } else if (details.method === 'PATCH') {
-                    action = 'UPDATE';
-                    // Per UPDATE, payload sono solo i campi modificati.
-                } else if (details.method === 'DELETE') {
-                    action = 'DELETE';
-                    payload = null; // Il DELETE non ha payload nel nostro contesto
-                }
-                
-                if (action) {
-                    // Aggiungi alla coda per la sincronizzazione successiva
-                    offlineQueue.push({ action, id, payload });
-                    saveQueue();
-                    
-                    // Forza un refresh per mostrare lo stato OFFLINE anche se i dati sono "vecchi"
-                    await refreshData(); 
-                    setStatus(`⚠️ Transazione salvata offline! ${offlineQueue.length} op. in coda.`);
-                }
-
-            // 2. Il Service Worker ci dice che la rete è tornata (dobbiamo risincronizzare)
-            } else if (data.type === 'SYNC_NOW_POSSIBLE') {
-                 console.log('[CLIENT] Ricevuto avviso di SYNC_NOW_POSSIBLE da SW.');
-                 // Chiama la nostra logica di sincronizzazione lato client
-                 attemptSync();
-            }
-        };
 
 
         // =========================================================
@@ -595,17 +537,23 @@
         }
         
         // =========================================================
-        // === CRUD FUNCTIONS (MODIFICATE PER GESTIONE ERRORE/OFFLINE) ===
+        // === CRUD FUNCTIONS (RIPRISTINATE CON LOGICA OFFLINE CLIENT-SIDE) ===
         // =========================================================
         
         // Funzione helper per la gestione degli errori e l'accodamento
         function handleCrudError(error, action, payload, id = null) {
-            if (error.message.includes("Failed to fetch")) {
-                // Errore di rete: usiamo la logica del Service Worker 
-                // Il Service Worker invierà un messaggio (vedi navigator.serviceWorker.onmessage)
-                // che salverà il payload corretto.
-                setStatus("⚠️ Errore di rete: La transazione è in attesa di sincronizzazione. Consulta la console.");
+            // Controlla il tipo di errore
+            if (error.message && error.message.includes("Failed to fetch")) {
+                // Errore di rete: accoda l'operazione
+                offlineQueue.push({ action, id, payload });
+                saveQueue();
+                
+                setStatus(`⚠️ Transazione ${action} salvata offline! ${offlineQueue.length} op. in coda.`);
+                
+                // Opzionale: re-render dei dati per mostrare lo stato OFFLINE, ma i dati locali non sono cambiati
+                refreshData(); 
             } else {
+                // Errore DB o altro
                 setStatus(`❌ Errore DB: ${error.message}`);
             }
         }
@@ -639,8 +587,8 @@
                 .select(); 
 
             if (error) {
+                // Chiama la funzione di gestione errori
                 handleCrudError(error, 'INSERT', newRow);
-                // Non c'è bisogno di fare l'accodamento qui, lo farà il Service Worker.
             } else {
                 setStatus(`✅ Acquisto registrato (ID ${newData[0].id})`);
                 await refreshData();
@@ -797,7 +745,6 @@
             
             renderTable(processedData);
             await calculateAndRenderSummaries(movimenti, processedData); 
-            // Aggiorna lo stato, che include il conteggio della coda offline
             updateOfflineStatus(); 
         }
         
@@ -822,23 +769,38 @@
         }
 
         async function calculateAndRenderSummaries(globalData, filteredData) {
-            const { data: globalSums, error: errGlobal } = await supabase
-                .from('movimenti')
-                .select('sum(acquisto), sum(vendita)')
-                .single(); 
+            // Qui assumiamo che i totali globali siano calcolati correttamente se la rete è disponibile
+            let tot_a = 0, tot_v = 0;
             
-            let tot_a = globalSums?.sum?.acquisto || 0;
-            let tot_v = globalSums?.sum?.vendita || 0;
+            if (navigator.onLine) {
+                 const { data: globalSums } = await supabase
+                    .from('movimenti')
+                    .select('sum(acquisto), sum(vendita)')
+                    .single(); 
+                 
+                 tot_a = globalSums?.sum?.acquisto || 0;
+                 tot_v = globalSums?.sum?.vendita || 0;
+            } else {
+                 // Fallback se offline, non possiamo ottenere i totali globali
+                 globalOutput.innerHTML = `
+                    <h3><span style="font-size: 1.5rem;">🌎</span> Totale Generale</h3>
+                    <p>Totali non disponibili offline.</p>
+                 `;
+            }
+
             let profitto = tot_v - tot_a;
             let profit_class = profitto >= 0 ? "profit-positive" : "profit-negative";
 
-            globalOutput.innerHTML = `
-                <h3><span style="font-size: 1.5rem;">🌎</span> Totale Generale</h3>
-                <p>Acquisti totali: <span class="summary-value">${formatCurrency(tot_a)}</span></p>
-                <p>Vendite totali: <span class="summary-value">${formatCurrency(tot_v)}</span></p>
-                <p>Profitto Netto: <span class="${profit_class}">${formatCurrency(profitto)}</span></p>
-            `;
-            
+            if (navigator.onLine) {
+                 globalOutput.innerHTML = `
+                    <h3><span style="font-size: 1.5rem;">🌎</span> Totale Generale</h3>
+                    <p>Acquisti totali: <span class="summary-value">${formatCurrency(tot_a)}</span></p>
+                    <p>Vendite totali: <span class="summary-value">${formatCurrency(tot_v)}</span></p>
+                    <p>Profitto Netto: <span class="${profit_class}">${formatCurrency(profitto)}</span></p>
+                 `;
+            }
+
+            // Totali Filtrati (basati sui dati visualizzati nella tabella)
             let da = filteredData.reduce((sum, mov) => sum + (mov.acquisto || 0), 0);
             let dv = filteredData.reduce((sum, mov) => sum + (mov.vendita || 0), 0);
             let dp = dv - da;
@@ -857,7 +819,6 @@
         // =========================================================
         
         document.addEventListener('DOMContentLoaded', () => {
-            // Imposta la data di acquisto predefinita a oggi
             document.getElementById('data-acquisto').value = new Date().toISOString().split('T')[0];
             
             // 1. Setup dei Tab
@@ -904,6 +865,7 @@
                 
                 idModificaInput.value = columns[0];
                 nuovoArticoloInput.value = columns[2];
+                // Rimuovi € e converti in stringa pulita
                 nuovoAcquistoInput.value = columns[3].replace('€', ''); 
                 prezzoVenditaInput.value = columns[4].replace('€', ''); 
                 
@@ -917,4 +879,3 @@
     </script>
 </body>
 </html>
-
