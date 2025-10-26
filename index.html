@@ -19,6 +19,7 @@
             --color-text: #212529;
             --border-radius: 8px;
             --shadow: 0 2px 4px rgba(0,0,0,0.1);
+
         }
 
         body { font-family: Arial,sans-serif; margin:0; padding:0; background:var(--color-background); color:var(--color-text); }
@@ -61,6 +62,37 @@
         tr:nth-child(even) { background-color:#f2f2f2; }
         tr:hover { background-color:#ddd; }
         .selected-row { background-color:var(--color-warning)!important; border:2px solid var(--color-primary); }
+
+
+.card-table {
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    padding: 16px;
+    margin-bottom: 20px;
+}
+
+.table-container {
+    max-height: 400px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+thead th {
+    position: sticky;
+    top: 0;
+    background: #f3f4f6;
+    z-index: 1;
+}
+
+tbody tr:hover {
+    background: #f1f5f9;
+}
 
     </style>
 </head>
@@ -160,7 +192,9 @@
             <div class="summary-box" id="daily-output"></div>
         </div>
 
-        <h3>Lista Movimenti</h3>
+       <div class="card-table">
+    <h3>Lista Movimenti</h3>
+    <div class="table-container">
         <table>
             <thead>
                 <tr>
@@ -178,6 +212,7 @@
             <tbody id="table-body"></tbody>
         </table>
     </div>
+</div>
 
 </div>
 
