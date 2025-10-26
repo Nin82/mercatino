@@ -771,18 +771,27 @@ const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         }
 
         async function calculateAndRenderSummaries(globalData, filteredData) {
-            // Qui assumiamo che i totali globali siano calcolati correttamente se la rete è disponibile
-            let tot_a = 0, tot_v = 0;
-            
-            if (navigator.onLine) {
-                 const { data: globalSums } = await supabaseClient
-                    .from('movimenti')
-                    .select('sum(acquisto), sum(vendita)')
-                    .single(); 
-                 
-                 tot_a = globalSums?.sum?.acquisto || 0;
-                 tot_v = globalSums?.sum?.vendita || 0;
-            } else {
+    let tot_a = 0, tot_v = 0;
+
+    if (navigator.onLine) {
+        // CORREZIONE PER EVITARE L'ERRORE 400:
+        // Usiamo gli alias (acquisto_tot: e vendita_tot:) e limit(1) invece di single().
+        const { data: globalSums, error: errGlobal } = await supabaseClient 
+            .from('movimenti')
+            .select('acquisto_tot:sum(acquisto), vendita_tot:sum(vendita)') // CORRETTO: alias per le somme
+            .limit(1); // Meno restrittivo di .single()
+
+        if (errGlobal) {
+            console.error("Errore nel recupero delle somme globali da Supabase:", errGlobal);
+        }
+
+        // Se i dati sono tornati (dovrebbe essere un array di un elemento)
+        if (globalSums && globalSums.length > 0) {
+            tot_a = globalSums[0].acquisto_tot || 0;
+            tot_v = globalSums[0].vendita_tot || 0;
+        }
+
+    } else {
                  // Fallback se offline, non possiamo ottenere i totali globali
                  globalOutput.innerHTML = `
                     <h3><span style="font-size: 1.5rem;">🌎</span> Totale Generale</h3>
@@ -881,3 +890,4 @@ const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     </script>
 </body>
 </html>
+
