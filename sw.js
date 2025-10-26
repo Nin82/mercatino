@@ -1,74 +1,67 @@
-// sw.js - Service Worker Essenziale per PWA Contabilità
+// sw.js - Service Worker PWA Contabilità
+const CACHE_NAME = 'contabilita-v3';
 
-const CACHE_NAME = 'contabilita-v3'; // Versione Cache aggiornata
-
-// Array con i percorsi di tutti i file statici necessari per avviare l'interfaccia (la "Shell" dell'app)
+// Tutti i file statici necessari per l'app
 const urlsToCache = [
-    '/', // L'indice principale del sito
-    '/index.html',
-    '/manifest.json',
-    // Includiamo la CDN di Supabase, essenziale per il client JS
-    'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2', 
-    // Assicurati che i percorsi delle tue icone siano corretti (ad esempio, se sono in /incons)
-    '/incons/icona-192x192.png', 
-    '/incons/icona-512x512.png',
-    // Aggiungi qui qualsiasi altro file CSS o JS critico
+  '/', // root
+  '/index.html',
+  '/manifest.json',
+  '/style.css',
+  '/main.js',
+  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js',
+  '/icons/icona-192x192.png',
+  '/icons/icona-512x512.png',
 ];
 
-// 1. Installazione: Caching degli asset
+// 1️⃣ Installazione: pre-caching
 self.addEventListener('install', event => {
-    console.log('[SW] Installazione. Inizio pre-caching della shell...');
-    event.waitUntil(
-        caches.open(CACHE_NAME)
-            .then(cache => {
-                // Aggiungiamo tutti i file essenziali alla cache.
-                return cache.addAll(urlsToCache);
-            })
-            .catch(err => console.error('[SW] Errore critico nel pre-caching:', err))
-    );
-    // Forza l'attivazione immediata del nuovo SW
-    self.skipWaiting();
+  console.log('[SW] Installazione — pre-caching della shell...');
+  event.waitUntil(
+    caches.open(CACHE_NAME)
+      .then(cache => cache.addAll(urlsToCache))
+      .catch(err => console.error('[SW] Errore nel pre-caching:', err))
+  );
+  self.skipWaiting();
 });
 
-// 2. Attivazione: Pulizia vecchie cache
+// 2️⃣ Attivazione: pulizia vecchie cache
 self.addEventListener('activate', event => {
-    console.log('[SW] Attivato. Pulizia cache obsolete...');
-    const cacheWhitelist = [CACHE_NAME];
-    event.waitUntil(
-        caches.keys().then(cacheNames => {
-            return Promise.all(
-                cacheNames.filter(name => cacheWhitelist.indexOf(name) === -1)
-                          .map(name => {
-                              console.log(`[SW] Eliminata cache: ${name}`);
-                              return caches.delete(name);
-                          })
-            );
-        })
-    );
-    // Assicura che il Service Worker controlli la pagina immediatamente
-    return self.clients.claim(); 
+  console.log('[SW] Attivato — pulizia cache obsolete...');
+  const keep = [CACHE_NAME];
+  event.waitUntil(
+    caches.keys().then(keys =>
+      Promise.all(
+        keys.filter(k => !keep.includes(k))
+            .map(k => {
+              console.log('[SW] Eliminata cache vecchia:', k);
+              return caches.delete(k);
+            })
+      )
+    )
+  );
+  self.clients.claim();
 });
 
-
-// 3. Fetch: Strategia Cache First / Network Fallback
+// 3️⃣ Fetch: Cache First / Network Fallback
 self.addEventListener('fetch', event => {
-    
-    // Per tutte le richieste che non sono GET (POST, PUT, DELETE),
-    // non intercettiamo. La logica di sincronizzazione offline è nel codice JS del client (index.html).
-    if (event.request.method !== 'GET') {
-        return; 
-    }
+  // Ignora tutto ciò che non è GET
+  if (event.request.method !== 'GET') return;
 
-    // Per tutte le richieste GET (asset statici o richieste di dati):
-    // 1. Cerca nella cache.
-    // 2. Se non trovato, vai in rete.
-    event.respondWith(
-        caches.match(event.request)
-            .then(response => {
-                if (response) {
-                    return response; // Trovato in cache
-                }
-                return fetch(event.request); // Non trovato, vai in rete
-            })
-    );
+  event.respondWith(
+    caches.match(event.request)
+      .then(cached => {
+        if (cached) return cached;
+        return fetch(event.request)
+          .then(response => {
+            // Salva una copia nella cache per la prossima volta
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+            return response;
+          })
+          .catch(() => {
+            // (Opzionale) Potresti restituire una pagina offline di fallback
+            console.warn('[SW] Offline e non in cache:', event.request.url);
+          });
+      })
+  );
 });
