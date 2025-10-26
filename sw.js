@@ -1,13 +1,12 @@
 // ✅ sw.js - Service Worker PWA Mercatino
 const CACHE_NAME = 'mercatino-v1';
 const urlsToCache = [
-  '/mercatino/',
-  '/mercatino/index.html',
-  '/mercatino/manifest.json',
-  '/mercatino/sw.js',
-  '/mercatino/icone/icon1.jpg',
-  '/mercatino/icone/icon2.jpg',
-  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js'
+    '/',
+    '/index.html',
+    '/manifest.json',
+    'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2',
+    '/icons/icon1.jpg',
+    '/icons/icon2.jpg',
 ];
 
 // 1️⃣ Installazione - Cache iniziale
