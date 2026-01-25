@@ -121,13 +121,37 @@
 
     .summary-container { display: flex; gap: 10px; margin-top: 15px; }
     .summary-box { flex: 1; background: #fff; padding: 15px; border-radius: 12px; border: 1px solid var(--border); font-weight: bold; }
+
+    /* Contenitore bottoni gestione */
+.btn-toolbar { 
+    display: flex; 
+    gap: 8px; 
+    margin-top: 20px; 
+}
+
+/* Stile specifico per Modifica, Vendita ed Elimina */
+.btn-toolbar button {
+    height: 35px !important;    /* Altezza ridotta (era 50) */
+    font-size: 11px !important;  /* Testo più tecnico e piccolo */
+    padding: 0 5px !important;   /* Meno ingombro laterale */
+    flex: 1;                     /* Divisi equamente in larghezza */
+    border-radius: 8px !important; /* Angoli leggermente meno arrotondati */
+    letter-spacing: 0.5px;       /* Testo più leggibile anche se piccolo */
+}
+
+/* Effetto quando sono disabilitati (più trasparenti) */
+.btn-toolbar button:disabled {
+    opacity: 0.4 !important;
+    cursor: not-allowed;
+}
+
 </style>
 
 </head>
 <body>
 
 <div class="container">
-    <h1>Gestione Inventario PWA</h1>
+    <h1>Gestione SUK Valenza</h1>
     <input type="text" id="status-output" value="Inizializzazione..." readonly>
 
     <!-- Tab Buttons -->
@@ -166,7 +190,7 @@
     <!-- Tab Gestione -->
     <div id="tab-gestione" class="tab-content">
         <h2>Gestione Movimento Selezionato</h2>
-        <p>Seleziona una riga dalla tabella in sezione riepilogo per abilitare le modifiche.</p>
+        <p>Seleziona una riga da TAB "sezione riepilogo" per proseguire.</p>
         <div class="form-group">
             <label for="id-modifica">ID Movimento Selezionato</label>
             <input type="text" id="id-modifica" readonly>
@@ -185,11 +209,11 @@
                 <input type="number" id="prezzo-vendita" step="0.01">
             </div>
         </div>
-        <div class="btn-toolbar">
-            <button id="btn-modifica" class="btn-secondary" disabled>Modifica</button>
-            <button id="btn-vendita" class="btn-success" disabled>Registra Vendita</button>
-            <button id="btn-elimina" class="btn-danger" disabled>Elimina</button>
-        </div>
+<div class="btn-toolbar">
+    <button id="btn-modifica" class="btn-secondary" disabled>✏️ MODIFICA</button>
+    <button id="btn-vendita" class="btn-success" disabled>💰 VENDITA</button>
+    <button id="btn-elimina" class="btn-danger" disabled>🗑️ ELIMINA</button>
+</div>
     </div>
 
     <!-- Tab Inventario / Filtri -->
@@ -327,20 +351,38 @@
 
     function formatCurrency(value){ return `€${parseFloat(value||0).toFixed(2)}`; }
 
-    function setupTabs(){
-        document.querySelectorAll('.tab-button').forEach(btn=>{
-            btn.addEventListener('click', ()=>{
-                document.querySelectorAll('.tab-button').forEach(b=>b.classList.remove('active'));
-                document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
-                btn.classList.add('active');
-                document.getElementById(btn.dataset.tab).classList.add('active');
-            });
-        });
-    }
+function setupTabs() {
+    document.querySelectorAll('.tab-button').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            
+            btn.classList.add('active');
+            const targetTab = document.getElementById(btn.dataset.tab);
+            if (targetTab) targetTab.classList.add('active');
 
-    function clearManagementFields(){
-        selectedRowId=null; idModificaInput.value=''; nuovoArticoloInput.value=''; nuovoAcquistoInput.value=''; prezzoVenditaInput.value=''; updateManagementButtons();
-    }
+            // Reset solo se il clic è "reale" (fatto dall'utente col mouse/dito)
+            // e non generato dal codice (isTrusted)
+            if (e.isTrusted) {
+                clearManagementFields();
+            }
+        });
+    });
+}
+    
+function clearManagementFields() {
+    selectedRowId = null; 
+    idModificaInput.value = ''; 
+    nuovoArticoloInput.value = ''; 
+    nuovoAcquistoInput.value = ''; 
+    prezzoVenditaInput.value = ''; 
+    
+    // Rimuove l'evidenziazione azzurra dalla riga nella tabella
+    document.querySelectorAll('.selected-row').forEach(row => row.classList.remove('selected-row'));
+    
+    // Disabilita i bottoni (Modifica, Vendita, Elimina)
+    updateManagementButtons();
+}
     
     function updateManagementButtons(){
         const isSelected = selectedRowId!==null && !isNaN(selectedRowId) && selectedRowId>0;
