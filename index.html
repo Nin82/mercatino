@@ -6,6 +6,7 @@
     <title>SUK VALENZA</title>
     <link rel="manifest" href="manifest.json">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 
 <style>
@@ -145,6 +146,24 @@
     cursor: not-allowed;
 }
 
+/* Rimpicciolisce i box delle date per farli stare sulla stessa riga su iPhone */
+#tab-inventario .form-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: nowrap !important; /* Forza i campi a stare affiancati */
+}
+
+#tab-inventario .form-group {
+    flex: 1; 
+    min-width: 0; /* Permette al campo di rimpicciolirsi quanto serve */
+}
+
+#filtro-data-dal, #filtro-data-al {
+    padding: 0 5px !important; /* Toglie lo spazio interno inutile */
+    font-size: 13px !important; /* Rimpicciolisce il testo della data */
+    text-align: center;
+}
+
 </style>
 
 </head>
@@ -185,7 +204,27 @@
             </div>
         </div>
         <button id="btn-acquisto" class="btn-primary">Registra Acquisto</button>
+
+
+        <div class="card" style="margin-top: 15px; padding: 0;">
+    <button type="button" onclick="toggleChart()" style="width: 100%; background: none; border: none; padding: 15px; display: flex; justify-content: space-between; align-items: center; cursor: pointer;">
+        <span style="font-weight: bold; color: var(--color-primary);">📊 Visualizza Andamento Business</span>
+        <span id="chart-arrow">▼</span>
+    </button>
+    
+    <div id="chart-container" style="display: none; padding: 0 15px 15px 15px;">
+        <div style="height: 250px; position: relative;">
+            <canvas id="businessChart"></canvas>
+        </div>
     </div>
+</div>
+
+
+    </div>
+
+
+
+
 
     <!-- Tab Gestione -->
     <div id="tab-gestione" class="tab-content">
@@ -222,13 +261,7 @@
     
     <div style="background: #fff; padding: 15px; border-radius: var(--border-radius); box-shadow: var(--shadow); margin-bottom: 20px;">
         <div class="form-row">
-            <div class="form-group">
-                <label for="tipo-filtro-data">🔍 Applica range a:</label>
-                <select id="tipo-filtro-data" style="background: var(--color-primary); color: white; font-weight: bold; border: none;">
-                    <option value="data">📅 Data Acquisto</option>
-                    <option value="data_vendita">💰 Data Vendita</option>
-                </select>
-            </div>
+            <input type="hidden" id="tipo-filtro-data" value="data">
             <div class="form-group">
                 <label for="filtro-stato">🏷️ Stato:</label>
                 <select id="filtro-stato">
@@ -251,10 +284,10 @@
             </div>
         </div>
 
-        <div class="btn-toolbar" style="margin-top: 10px;">
-            <button id="btn-filtra" class="btn-primary" style="flex: 2;">Applica Filtri</button>
-            <button id="btn-reset-all" class="btn-secondary" style="flex: 1;">Reset</button>
-        </div>
+            <div class="btn-toolbar" style="margin-top: 10px; display: flex; gap: 10px;">
+                 <button id="btn-filtra" class="btn-primary" style="flex: 1;">Applica Filtri</button>
+                 <button id="btn-reset-all" class="btn-secondary" style="flex: 1;">Reset</button>
+            </div>
     </div>
 
     <div class="summary-container">
@@ -268,7 +301,22 @@
     </div>
 
 <div class="card-table">
-    <h3>Lista Movimenti</h3>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 25px; margin-bottom: 15px;">
+    <h3 style="margin: 0; font-size: 1.1rem; color: #1e293b; display: flex; align-items: center; gap: 8px;">
+        📦 Lista Movimenti
+    </h3>
+    <span id="counter-movimenti" 
+          style="background: #3730a3; 
+                 color: #ffffff !important; 
+                 padding: 4px 12px; 
+                 border-radius: 8px; 
+                 font-size: 14px; 
+                 font-weight: 900; 
+                 box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                 border: 1px solid #4338ca;">
+        0
+    </span>
+</div>
     <div class="table-container">
         <table id="main-table">
             <thead>
@@ -313,6 +361,8 @@
 
     // --- OFFLINE QUEUE ---
     let offlineQueue = [];
+    let movimentiGlobali = [];
+    let myChart = null;
     const QUEUE_KEY = 'supabase_offline_queue';
 
     function saveQueue(){ localStorage.setItem(QUEUE_KEY, JSON.stringify(offlineQueue)); updateOfflineStatus(); }
@@ -382,23 +432,30 @@ function clearManagementFields() {
     nuovoAcquistoInput.value = ''; 
     prezzoVenditaInput.value = ''; 
     
-    // Rimuove l'evidenziazione azzurra dalla riga nella tabella
+    // SVUOTA IL MESSAGGIO DI STATO (quello verde dello screenshot)
+    // Se usi statusOutput (che è un input), facciamo così:
+    if (statusOutput) statusOutput.value = "✅ Pronto."; 
+    
+    // Se invece quel pezzo verde è un DIV diverso, usa:
+    // document.getElementById('nome-tuo-div-verde').innerText = '';
+
+    // Rimuove l'evidenziazione azzurra
     document.querySelectorAll('.selected-row').forEach(row => row.classList.remove('selected-row'));
     
-    // Disabilita i bottoni (Modifica, Vendita, Elimina)
+    // Disabilita i bottoni
     updateManagementButtons();
 }
     
-    function updateManagementButtons(){
+function updateManagementButtons(){
         const isSelected = selectedRowId!==null && !isNaN(selectedRowId) && selectedRowId>0;
         btnVendita.disabled=!isSelected; btnModifica.disabled=!isSelected; btnElimina.disabled=!isSelected;
         const opacityValue = isSelected?'1':'0.7';
         btnVendita.style.opacity=opacityValue; btnModifica.style.opacity=opacityValue; btnElimina.style.opacity=opacityValue;
         if(!isSelected){ document.querySelectorAll('.selected-row').forEach(row=>row.classList.remove('selected-row'));}
-    }
+}
 
     // --- CRUD FUNCTIONS ---
-    async function addAcquisto(){
+ async function addAcquisto(){
         const data = document.getElementById('data-acquisto').value || new Date().toISOString().split('T')[0];
         const articolo = document.getElementById('articolo-acquisto').value.trim();
         const prezzoAcquisto = parseFloat(document.getElementById('prezzo-acquisto').value);
@@ -482,71 +539,94 @@ async function deleteMovimento(){
 
 
 async function loadDataAndRender() {
-    const tipoData = document.getElementById('tipo-filtro-data').value;
+    const hiddenTipoData = document.getElementById('tipo-filtro-data');
+    const filterStato = document.getElementById('filtro-stato').value;
     const dal = document.getElementById('filtro-data-dal').value;
     const al = document.getElementById('filtro-data-al').value;
-    const filterStato = document.getElementById('filtro-stato').value;
 
+    // 1. LOGICA AUTOMATICA: Lo stato decide quale colonna temporale usare per il filtro manuale
+    if (filterStato === 'Venduto') {
+        hiddenTipoData.value = 'data_vendita'; 
+    } else {
+        hiddenTipoData.value = 'data'; 
+    }
+
+    const tipoData = hiddenTipoData.value;
     setStatus("⏳ Caricamento...");
 
-    // 1. Costruzione Query Base
+    // 2. Costruzione Query Base
     let query = supabaseClient.from('movimenti').select('*').order('id', {ascending: false});
 
-    // 2. Applicazione Filtri Temporali (Range su Data Acquisto o Data Vendita)
-    if (dal) query = query.gte(tipoData, dal);
-    if (al) query = query.lte(tipoData, al);
-
-    // 3. Filtro Stato (Solo per i due stati fissi nel DB)
-    if (filterStato === 'Acquistato' || filterStato === 'Venduto') {
-        query = query.eq('stato', filterStato);
+    // 3. LOGICA DI ARCHIVIAZIONE INTELLIGENTE (Salva-Invenduti)
+    if (dal || al) {
+        // Se imposti date MANUALI, l'app esegue esattamente i tuoi ordini
+        if (dal) query = query.gte(tipoData, dal);
+        if (al) query = query.lte(tipoData, al);
+        
+        // Se cerchi per stato specifico mentre usi le date
+        if (filterStato === 'Acquistato' || filterStato === 'Venduto') {
+            query = query.eq('stato', filterStato);
+        }
+    } else {
+        // UTILIZZO QUOTIDIANO (Senza date inserite):
+        const annoCorrente = new Date().getFullYear();
+        
+        if (filterStato === 'Venduto') {
+            // Mostra solo i venduti del 2026
+            query = query.eq('stato', 'Venduto').gte('data_vendita', `${annoCorrente}-01-01`);
+        } else if (filterStato === 'Acquistato' || filterStato === 'Giacenza') {
+            // Mostra TUTTI gli invenduti (anche del 2025 o anni prima)
+            query = query.eq('stato', 'Acquistato');
+        } else {
+            // "Tutti gli stati": Mostra (Acquistati di sempre) + (Venduti del 2026)
+            query = query.or(`stato.eq.Acquistato,and(stato.eq.Venduto,data_vendita.gte.${annoCorrente}-01-01)`);
+        }
     }
 
     const { data: movimenti, error } = await query;
+
     if (error) { 
         console.error("Errore Supabase:", error);
         setStatus("❌ Errore caricamento"); 
         return; 
     }
+movimentiGlobali = movimenti;
 
-    // 4. Elaborazione Dati (Calcolo Profitto e Giacenza Reale)
+    // 4. Elaborazione Dati (Mapping per profitto e giacenza)
     const processedData = movimenti.map(mov => {
         const profitto = (mov.vendita || 0) - (mov.acquisto || 0);
         let giorniGiacenza = 0;
         const dataAcq = new Date(mov.data);
         
         if (mov.stato === 'Venduto' && mov.data_vendita) {
-            // Se venduto, calcoliamo la giacenza totale fino alla vendita
             const dataVen = new Date(mov.data_vendita);
             giorniGiacenza = Math.floor((dataVen - dataAcq) / (1000 * 60 * 60 * 24));
         } else if (mov.data) {
-            // Se disponibile, calcoliamo i giorni fino a oggi
             const oggi = new Date();
             giorniGiacenza = Math.floor((oggi - dataAcq) / (1000 * 60 * 60 * 24));
         }
 
         if (giorniGiacenza < 0) giorniGiacenza = 0;
-
-        // ALLERTA: Solo se è ACQUISTATO (non ancora venduto) e oltre i 14 giorni
         const allertaGiacenza = (mov.stato === 'Acquistato' && giorniGiacenza > 14);
 
         return { 
             ...mov, 
             profitto, 
             giacenza: giorniGiacenza, 
-            isAlert: allertaGiacenza // Usiamo questo per il filtro
+            isAlert: allertaGiacenza 
         };
     });
 
-    // 5. Filtro logico "Giacenza"
+    // 5. Filtro logico extra per il tab "Giacenza" (quelli con alert 🔴)
     let finalData = processedData;
     if (filterStato === 'Giacenza') {
-        // Ora cerchiamo correttamente la variabile isAlert
         finalData = processedData.filter(m => m.isAlert === true);
     }
 
-    // 6. Rendering
+    // 6. Rendering finale (Tabella + Riepiloghi + Contatore)
     renderTable(finalData);
     calculateAndRenderSummaries(movimenti, finalData);
+    updateChart(movimenti);
     setStatus("✅ Dati aggiornati.");
 }
 
@@ -558,19 +638,29 @@ function renderTable(data) {
 
     data.forEach(mov => {
         const tr = document.createElement('tr');
-        // AGGIUNGI QUESTA RIGA: serve al listener per sapere l'ID
         tr.dataset.id = mov.id; 
         
-        const statoBadge = mov.stato === 'Venduto' 
-            ? `<span style="background: #dcfce7; color: #166534; padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: 800; border: 1px solid #bbf7d0;">VENDUTO</span>`
-            : `<span style="background: #e0e7ff; color: #3730a3; padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: 800; border: 1px solid #c7d2fe;">ACQUISTATO</span>`;
+        // --- BADGE STATO ---
+        let statoBadge = '';
+        if (mov.stato === 'Venduto') {
+            statoBadge = `<span style="background: #dcfce7; color: #166534; padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: 800; border: 1px solid #bbf7d0;">VENDUTO</span>`;
+        } else {
+            const colorAcq = mov.isAlert ? '#991b1b' : '#3730a3'; 
+            const bgAcq = mov.isAlert ? '#fee2e2' : '#e0e7ff';    
+            const alertIcon = mov.isAlert ? '⚠️ ' : '';
+            statoBadge = `<span style="background: ${bgAcq}; color: ${colorAcq}; padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: 800; border: 1px solid ${colorAcq};">${alertIcon}DISPONIBILE</span>`;
+        }
 
         const dataVenLabel = mov.data_vendita ? new Date(mov.data_vendita).toLocaleDateString('it-IT') : '-';
-        const giacenzaHtml = mov.isAlert 
-            ? `<span style="color: var(--danger); font-weight: 800;">🔴 ${mov.giacenza} gg</span>` 
-            : `<span>${mov.giacenza} gg</span>`;
+        
+        // --- LOGICA GIACENZA PULITA ---
+        // Se è venduto, mostriamo "-", altrimenti mostriamo i giorni
+        const giacenzaHtml = mov.stato === 'Venduto' 
+            ? `<span style="color: #94a3b8;">-</span>` 
+            : (mov.isAlert 
+                ? `<span style="color: #ef4444; font-weight: 800;">🔴 ${mov.giacenza} gg</span>` 
+                : `<span>${mov.giacenza} gg</span>`);
 
-        // Scriviamo le celle in ordine
         tr.innerHTML = `
             <td style="display:none;">${mov.id}</td>
             <td>${new Date(mov.data).toLocaleDateString('it-IT')}</td>
@@ -586,6 +676,12 @@ function renderTable(data) {
         `;
         tbody.appendChild(tr);
     });
+
+    // --- AGGIORNAMENTO CONTATORE DINAMICO ---
+    const counter = document.getElementById('counter-movimenti');
+    if (counter) {
+        counter.textContent = data.length;
+    }
 }
 
 async function calculateAndRenderSummaries(globalData,filteredData){
@@ -611,7 +707,101 @@ async function resetAll(){
     document.getElementById('filtro-data-al').value = ''; 
     document.getElementById('filtro-stato').value = 'Tutto'; 
     document.getElementById('search-articolo').value = '';
+    
+    // PULISCE ANCHE LA SEZIONE MODIFICA/VENDITA
+    clearManagementFields(); 
+
     await loadDataAndRender(); 
+}
+
+
+
+// grafico
+function toggleChart() {
+    const container = document.getElementById('chart-container');
+    const arrow = document.getElementById('chart-arrow');
+    
+    if (container.style.display === "none") {
+        container.style.display = "block";
+        arrow.textContent = "▲";
+        // Forza il refresh del grafico per adattarsi allo spazio appena aperto
+        if (myChart) myChart.resize();
+    } else {
+        container.style.display = "none";
+        arrow.textContent = "▼";
+    }
+}
+
+function updateChart(movimenti) {
+    const canvas = document.getElementById('businessChart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+
+    // 1. Ordiniamo i movimenti per data (dal più vecchio al più recente)
+    const datiOrdinati = [...movimenti].sort((a, b) => new Date(a.data) - new Date(b.data));
+
+    // 2. Raggruppiamo per Mese-Anno (es: "12-2025", "01-2026") per non avere troppi punti
+    const raggruppati = {};
+
+    datiOrdinati.forEach(m => {
+        // Le uscite le contiamo quando hai comprato
+        const dAcq = new Date(m.data);
+        const labelAcq = `${dAcq.getMonth() + 1}/${dAcq.getFullYear()}`;
+        if (!raggruppati[labelAcq]) raggruppati[labelAcq] = { acquisti: 0, vendite: 0 };
+        raggruppati[labelAcq].acquisti += (m.acquisto || 0);
+        
+        // Le entrate le contiamo quando hai effettivamente venduto
+        if (m.stato === 'Venduto' && m.data_vendita) {
+            const dVen = new Date(m.data_vendita);
+            const labelVen = `${dVen.getMonth() + 1}/${dVen.getFullYear()}`;
+            if (!raggruppati[labelVen]) raggruppati[labelVen] = { acquisti: 0, vendite: 0 };
+            raggruppati[labelVen].vendite += (m.vendita || 0);
+        }
+    });
+
+    const labels = Object.keys(raggruppati);
+    const dataAcquisti = labels.map(l => raggruppati[l].acquisti);
+    const dataVendite = labels.map(l => raggruppati[l].vendite);
+
+    if (myChart) myChart.destroy();
+
+    myChart = new Chart(ctx, {
+        type: 'line', // La linea è meglio per vedere l'andamento nel tempo
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'Uscite (Acquisti)',
+                    data: dataAcquisti,
+                    borderColor: '#ef4444',
+                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                    fill: true,
+                    tension: 0.3 // Rende la linea curva e "morbida"
+                },
+                {
+                    label: 'Entrate (Vendite)',
+                    data: dataVendite,
+                    borderColor: '#22c55e',
+                    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                    fill: true,
+                    tension: 0.3
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: { 
+                    beginAtZero: true,
+                    ticks: { callback: v => '€' + v }
+                }
+            },
+            plugins: {
+                legend: { position: 'bottom' }
+            }
+        }
+    });
 }
 
     // --- EVENT LISTENERS ---
@@ -682,24 +872,34 @@ async function resetAll(){
 });
 
 //filtro testuale
+// 2. Modifica il listener della ricerca così:
 document.getElementById('search-articolo').addEventListener('input', function(e) {
     const searchText = e.target.value.toLowerCase();
-    const rows = document.querySelectorAll('#table-body tr');
-
-    rows.forEach(row => {
-        // La colonna dell'articolo è la quinta (indice 4)
-        const articoloCell = row.cells[4];
-        if (articoloCell) {
-            const text = articoloCell.textContent.toLowerCase();
-            // Se il testo è contenuto nell'articolo, mostra la riga, altrimenti nascondila
-            if (text.includes(searchText)) {
-                row.style.display = "";
-            } else {
-                row.style.display = "none";
-            }
-        }
+    
+    // Filtriamo l'array originale invece di nascondere le righe HTML
+    const filtrati = movimentiGlobali.filter(mov => {
+        const nomeArticolo = (mov.articolo || '').toLowerCase();
+        return nomeArticolo.includes(searchText);
     });
+
+    // Rilanciamo il rendering: il contatore si aggiornerà da solo!
+    renderTable(filtrati);
 });
+
+// 1. Il tuo codice esistente per il click
+document.getElementById('btn-acquisto').addEventListener('click', () => {
+    // Qui andrebbe la tua logica di salvataggio...
+    setTimeout(() => document.getElementById('articolo-acquisto').focus(), 500);
+});
+
+// 2. AGGIUNGI QUESTO: permette di salvare premendo "Invio" sulla tastiera
+document.getElementById('prezzo-acquisto').addEventListener('keypress', function (e) {
+    if (e.key === 'Enter') {
+        document.getElementById('btn-acquisto').click();
+    }
+});
+
+
     // --- SERVICE WORKER ---
     if('serviceWorker' in navigator){ window.addEventListener('load',()=>{ navigator.serviceWorker.register('/mercatino/sw.js').then(reg=>console.log('✅ SW registrato',reg.scope)).catch(err=>console.error('❌ SW fallito',err));}); }
 
