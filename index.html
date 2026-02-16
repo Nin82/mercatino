@@ -956,48 +956,47 @@ function mostraTop10() {
 function calcolaEVisualizzaInsight() {
     if (!movimentiGlobali || movimentiGlobali.length === 0) return;
 
-    const giorniSettimana = ["Domenica", "Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato"];
-    const nomiMesi = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"];
-    
     const conteggioGiorni = new Array(7).fill(0);
     const conteggioMesi = new Array(12).fill(0);
-    
-    // 🧠 ANALISI TREND PRODOTTO
-    const categorie = ["Giacca", "Giaccone", "Maglione", "Camicia", "T-shirt", "Pantalone", "Scarpe", "Borsa"];
-    const reportCategorie = {};
+    const reportDinamico = {}; // Qui nasceranno le categorie da sole!
 
     const venduti = movimentiGlobali.filter(m => m.stato === 'Venduto' && m.data_vendita);
     if (venduti.length === 0) return;
 
     venduti.forEach(m => {
+        // 1. Tempo (Giorno e Mese)
         const data = new Date(m.data_vendita);
         if (!isNaN(data.getTime())) {
             conteggioGiorni[data.getDay()]++;
             conteggioMesi[data.getMonth()]++;
         }
 
-        // Analisi Prodotto
-        const nomeArticolo = (m.articolo || "").toLowerCase();
-        categorie.forEach(cat => {
-            if (nomeArticolo.includes(cat.toLowerCase())) {
-                reportCategorie[cat] = (reportCategorie[cat] || 0) + 1;
+        // 2. Categoria Dinamica (Prendiamo la prima parola)
+        // Puliamo la stringa, prendiamo la prima parola e la mettiamo in maiuscolo
+        const nomeCompleto = (m.articolo || "").trim();
+        if (nomeCompleto) {
+            const primaParola = nomeCompleto.split(' ')[0].toUpperCase();
+            // Escludiamo parole troppo corte tipo "IL", "LA", "UN"
+            if (primaParola.length > 2) {
+                reportDinamico[primaParola] = (reportDinamico[primaParola] || 0) + 1;
             }
-        });
+        }
     });
 
-    // 1. Giorno Top
-    const migliorGiorno = giorniSettimana[conteggioGiorni.indexOf(Math.max(...conteggioGiorni))];
+    // Calcolo Vincitori
+    const giorni = ["Domenica", "Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato"];
+    const mesi = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"];
+    
+    const migliorGiorno = giorni[conteggioGiorni.indexOf(Math.max(...conteggioGiorni))];
+    const migliorMese = mesi[conteggioMesi.indexOf(Math.max(...conteggioMesi))];
 
-    // 2. Mese Top
-    const migliorMese = nomiMesi[conteggioMesi.indexOf(Math.max(...conteggioMesi))];
-
-    // 3. Prodotto Trend
-    let prodottoTrend = "Nessun trend chiaro";
-    let maxVenditeCat = 0;
-    for (const [cat, count] of Object.entries(reportCategorie)) {
-        if (count > maxVenditeCat) {
-            maxVenditeCat = count;
-            prodottoTrend = cat;
+    // Trova la categoria più venduta tra quelle nate dinamicamente
+    let trendDinamico = "Nessun dato";
+    let maxVoti = 0;
+    for (const [cat, voti] of Object.entries(reportDinamico)) {
+        if (voti > maxVoti) {
+            maxVoti = voti;
+            trendDinamico = cat;
         }
     }
 
@@ -1006,9 +1005,9 @@ function calcolaEVisualizzaInsight() {
     
     if (insightBox && insightText) {
         insightText.innerHTML = `
-            🚀 <b>Trend:</b> Le <b>${prodottoTrend}</b> sono il prodotto più richiesto.<br>
+            🚀 <b>Trend:</b> Stai vendendo forte la categoria <b>${trendDinamico}</b>.<br>
             📅 <b>Timing:</b> Il tuo giorno d'oro è il <b>${migliorGiorno}</b>.<br>
-            🏆 <b>Stagionalità:</b> <b>${migliorMese}</b> è storicamente il tuo mese record.
+            🏆 <b>Stagionalità:</b> <b>${migliorMese}</b> è il mese con più volume.
         `;
         insightBox.style.display = 'flex';
     }
