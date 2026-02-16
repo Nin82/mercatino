@@ -259,6 +259,16 @@
     <div id="tab-inventario" class="tab-content">
     <h2 style="margin-bottom: 10px;">Filtri e Riepilogo</h2>
 
+    <div id="smart-insight" style="display: none; background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); border: 1px solid #bfdbfe; padding: 12px 16px; border-radius: 12px; margin-bottom: 20px; align-items: center; gap: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
+        <div class="insight-icon" style="background: white; width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.4rem; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+            💡
+        </div>
+        <div style="display: flex; flex-direction: column;">
+            <small style="color: #1e40af; font-weight: bold; text-transform: uppercase; font-size: 0.65rem; letter-spacing: 0.05em;">Consiglio Strategico</small>
+            <span id="insight-text" style="font-size: 0.9rem; color: #1e3a8a; line-height: 1.4;"></span>
+        </div>
+    </div>
+
 <div id="record-dashboard" style="display: flex; gap: 10px; margin-bottom: 15px; overflow-x: auto;">
     <div class="summary-box" onclick="mostraTop10()" style="flex: 1; min-width: 130px; border-top: 4px solid #f59e0b; background: #fffbeb; padding: 10px; border-radius: 8px; box-shadow: var(--shadow); cursor: pointer;">
     <small style="color: #92400e; font-weight: bold; font-size: 10px;">🏆 TOP PROFITTO</small>
@@ -639,6 +649,7 @@ async function loadDataAndRender() {
     // 🟢 QUI ABBIAMO CORRETTO IL NOME DELLA VARIABILE
     updateRecords(finalData); 
     
+    
     setStatus("✅ Dati aggiornati.");
 }
 
@@ -706,6 +717,7 @@ function renderTable(data) {
 
     const counter = document.getElementById('counter-movimenti');
     if (counter) counter.textContent = data.length;
+    calcolaEVisualizzaInsight();
 }
 
 async function calculateAndRenderSummaries(globalData,filteredData){
@@ -774,6 +786,7 @@ document.getElementById('btn-carica-tutto')?.addEventListener('click', async () 
     calculateAndRenderSummaries(data, processed);
     if(myChart) updateChart(data);
     updateRecords(data);
+    
     setStatus(`✅ Visualizzati tutti i ${data.length} movimenti.`);
 });
 
@@ -937,6 +950,68 @@ function mostraTop10() {
 
     document.getElementById('lista-top-10').innerHTML = html;
     document.getElementById('modal-top-10').style.display = 'flex';
+}
+
+
+function calcolaEVisualizzaInsight() {
+    if (!movimentiGlobali || movimentiGlobali.length === 0) return;
+
+    const giorniSettimana = ["Domenica", "Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato"];
+    const nomiMesi = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"];
+    
+    const conteggioGiorni = new Array(7).fill(0);
+    const conteggioMesi = new Array(12).fill(0);
+    
+    // 🧠 ANALISI TREND PRODOTTO
+    const categorie = ["Giacca", "Giaccone", "Maglione", "Camicia", "T-shirt", "Pantalone", "Scarpe", "Borsa"];
+    const reportCategorie = {};
+
+    const venduti = movimentiGlobali.filter(m => m.stato === 'Venduto' && m.data_vendita);
+    if (venduti.length === 0) return;
+
+    venduti.forEach(m => {
+        const data = new Date(m.data_vendita);
+        if (!isNaN(data.getTime())) {
+            conteggioGiorni[data.getDay()]++;
+            conteggioMesi[data.getMonth()]++;
+        }
+
+        // Analisi Prodotto
+        const nomeArticolo = (m.articolo || "").toLowerCase();
+        categorie.forEach(cat => {
+            if (nomeArticolo.includes(cat.toLowerCase())) {
+                reportCategorie[cat] = (reportCategorie[cat] || 0) + 1;
+            }
+        });
+    });
+
+    // 1. Giorno Top
+    const migliorGiorno = giorniSettimana[conteggioGiorni.indexOf(Math.max(...conteggioGiorni))];
+
+    // 2. Mese Top
+    const migliorMese = nomiMesi[conteggioMesi.indexOf(Math.max(...conteggioMesi))];
+
+    // 3. Prodotto Trend
+    let prodottoTrend = "Nessun trend chiaro";
+    let maxVenditeCat = 0;
+    for (const [cat, count] of Object.entries(reportCategorie)) {
+        if (count > maxVenditeCat) {
+            maxVenditeCat = count;
+            prodottoTrend = cat;
+        }
+    }
+
+    const insightBox = document.getElementById('smart-insight');
+    const insightText = document.getElementById('insight-text');
+    
+    if (insightBox && insightText) {
+        insightText.innerHTML = `
+            🚀 <b>Trend:</b> Le <b>${prodottoTrend}</b> sono il prodotto più richiesto.<br>
+            📅 <b>Timing:</b> Il tuo giorno d'oro è il <b>${migliorGiorno}</b>.<br>
+            🏆 <b>Stagionalità:</b> <b>${migliorMese}</b> è storicamente il tuo mese record.
+        `;
+        insightBox.style.display = 'flex';
+    }
 }
 
     // --- EVENT LISTENERS ---
