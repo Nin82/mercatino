@@ -107,6 +107,17 @@
         padding-left: 20px;
     }
 
+.zoomable {
+    -webkit-tap-highlight-color: transparent; /* Toglie il flash blu brutto su iPhone */
+    user-select: none; /* Impedisce che si selezioni il testo mentre tieni premuto */
+}
+
+/* Effetto "pressione" */
+.zoomable:active {
+    background-color: var(--primary-light) !important;
+    transition: background 0.2s;
+}
+
     /* Colore Profitto */
     .profit-positive { color: var(--success) !important; font-weight: bold; }
     .profit-negative { color: var(--danger) !important; font-weight: bold; }
@@ -164,6 +175,18 @@
     text-align: center;
 }
 
+textarea {
+    box-sizing: border-box; /* Fa sì che il padding non allarghi la textarea oltre il 100% */
+    border: 1px solid #cbd5e1;
+    transition: border-color 0.2s;
+}
+
+textarea:focus {
+    outline: none;
+    border-color: #3b82f6; /* Diventa blu quando ci scrivi dentro */
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
 </style>
 
 </head>
@@ -181,29 +204,40 @@
     </div>
 
     <!-- Tab Acquisti -->
-    <div id="tab-acquisti" class="tab-content active">
-        <h2>Registra Nuovo Acquisto</h2>
-        <div class="form-row">
-            <div class="form-group">
-                <label for="data-acquisto">Data Acquisto</label>
-                <input type="date" id="data-acquisto">
-            </div>
-            <div class="form-group">
-                <label for="articolo-acquisto">Articolo</label>
-                <input type="text" id="articolo-acquisto" placeholder="Nome Articolo">
-            </div>
+<div id="tab-acquisti" class="tab-content active">
+    <h2>Registra Nuovo Acquisto</h2>
+    
+    <div class="form-row">
+        <div class="form-group">
+            <label for="data-acquisto">Data Acquisto</label>
+            <input type="date" id="data-acquisto">
         </div>
-        <div class="form-row">
-            <div class="form-group">
-                <label for="prezzo-acquisto">Prezzo Acquisto (€)</label>
-                <input type="number" id="prezzo-acquisto" step="0.01">
-            </div>
-            <div class="form-group">
-                <label for="guadagno-previsto">Guadagno Previsto (€)</label>
-                <input type="number" id="guadagno-previsto" step="0.01">
-            </div>
+        <div class="form-group">
+            <label for="articolo-acquisto">Articolo</label>
+            <input type="text" id="articolo-acquisto" placeholder="Nome Articolo">
         </div>
-        <button id="btn-acquisto" class="btn-primary">Registra Acquisto</button>
+    </div>
+
+    <div class="form-row">
+        <div class="form-group">
+            <label for="prezzo-acquisto">Prezzo Acquisto (€)</label>
+            <input type="number" id="prezzo-acquisto" step="0.01">
+        </div>
+        <div class="form-group">
+            <label for="guadagno-previsto">Guadagno Previsto (€)</label>
+            <input type="number" id="guadagno-previsto" step="0.01">
+        </div>
+    </div>
+
+    <div class="form-row">
+        <div class="form-group" style="flex: 1;">
+            <label for="nota-acquisto">Note Iniziali (Opzionale)</label>
+            <textarea id="nota-acquisto" 
+                      placeholder="Aggiungi dettagli extra..." 
+                      style="width: 100%; min-height: 80px; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-family: inherit; font-size: 14px; margin-top: 5px; resize: vertical;"></textarea>
+        </div>
+    </div>
+    <button id="btn-acquisto" class="btn-primary" style="margin-top: 15px;">Registra Acquisto</button>
 
 
         <div class="card" style="margin-top: 15px; padding: 0;">
@@ -247,6 +281,11 @@
                 <label for="prezzo-vendita">Prezzo Vendita (€)</label>
                 <input type="number" id="prezzo-vendita" step="0.01">
             </div>
+
+            <div class="form-group" style="margin-top: 15px;">
+    <label for="nuova-nota">Note / Dettagli</label>
+    <textarea id="nuova-nota" placeholder="Aggiungi dettagli extra..." rows="2" style="width: 100%; border: 1px solid #ccc; border-radius: 4px; padding: 8px;"></textarea>
+</div>
         </div>
 <div class="btn-toolbar">
     <button id="btn-modifica" class="btn-secondary" disabled>✏️ MODIFICA</button>
@@ -349,6 +388,7 @@
                     <th style="width: 130px;">STATO</th>
                     <th style="width: 100px;">DATA VEN.</th>
                     <th style="text-align: left; width: auto;">ARTICOLO</th>
+                    <th style="text-align: left; width: 150px;">NOTE</th>
                     <th style="width: 90px;">€ ACQ.</th>
                     <th style="width: 90px;">€ VEN.</th>
                     <th style="width: 100px;">PROFITTO</th>
@@ -369,27 +409,55 @@
     const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     // --- VARIABILI GLOBALI ---
+// --- VARIABILI GLOBALI (Versione Finale) ---
     const tableBody = document.getElementById('table-body');
     const statusOutput = document.getElementById('status-output');
     const globalOutput = document.getElementById('global-output');
     const dailyOutput = document.getElementById('daily-output');
+    
+    // Bottoni
     const btnVendita = document.getElementById('btn-vendita');
     const btnModifica = document.getElementById('btn-modifica');
     const btnElimina = document.getElementById('btn-elimina');
+    
+    // Input Tab Gestione
     const idModificaInput = document.getElementById('id-modifica');
     const nuovoArticoloInput = document.getElementById('nuovo-articolo');
     const nuovoAcquistoInput = document.getElementById('nuovo-acquisto');
     const prezzoVenditaInput = document.getElementById('prezzo-vendita');
+    const nuovaNotaInput = document.getElementById('nuova-nota'); 
+
+    // Input Tab Acquisto
+    const dataAcquistoInput = document.getElementById('data-acquisto'); // Ti serve per il default della data
+    const articoloInput = document.getElementById('articolo-acquisto');
+    const acquistoInput = document.getElementById('prezzo-acquisto');
+    const guadagnoPrevistoInput = document.getElementById('guadagno-previsto'); // Aggiunto per comodità
+    const notaAcquistoInput = document.getElementById('nota-acquisto'); 
+
     let selectedRowId = null;
 
-    // --- OFFLINE QUEUE ---
+    // --- OFFLINE QUEUE & DATA ---
     let offlineQueue = [];
     let movimentiGlobali = [];
     let myChart = null;
-   
     let datiFiltratiCorrenti = [];
-
     const QUEUE_KEY = 'supabase_offline_queue';
+
+let touchTimer;
+function handleTouchStart(nome, note) {
+    touchTimer = setTimeout(() => {
+        openZoom(nome, note);
+        if (navigator.vibrate) navigator.vibrate(50); // Vibrazione feedback
+    }, 600); // 600ms = tempo del ditino premuto
+}
+function handleTouchEnd() {
+    clearTimeout(touchTimer);
+}
+function openZoom(nome, note) {
+    document.getElementById('zoom-nome').innerText = nome;
+    document.getElementById('zoom-note').innerText = note;
+    document.getElementById('modal-zoom').style.display = 'flex';
+}
 
     function saveQueue(){ localStorage.setItem(QUEUE_KEY, JSON.stringify(offlineQueue)); updateOfflineStatus(); }
     function loadQueue(){ const storedQueue = localStorage.getItem(QUEUE_KEY); if(storedQueue){ offlineQueue = JSON.parse(storedQueue);} updateOfflineStatus(); }
@@ -453,22 +521,23 @@ function setupTabs() {
     
 function clearManagementFields() {
     selectedRowId = null; 
-    idModificaInput.value = ''; 
-    nuovoArticoloInput.value = ''; 
-    nuovoAcquistoInput.value = ''; 
-    prezzoVenditaInput.value = ''; 
     
-    // SVUOTA IL MESSAGGIO DI STATO (quello verde dello screenshot)
-    // Se usi statusOutput (che è un input), facciamo così:
+    // Reset campi utilizzando le variabili globali dichiarate in alto
+    if (idModificaInput) idModificaInput.value = ''; 
+    if (nuovoArticoloInput) nuovoArticoloInput.value = ''; 
+    if (nuovoAcquistoInput) nuovoAcquistoInput.value = ''; 
+    if (prezzoVenditaInput) prezzoVenditaInput.value = ''; 
+    
+    // Reset Note (usando la variabile globale)
+    if (nuovaNotaInput) nuovaNotaInput.value = ''; 
+    
+    // Reset stato
     if (statusOutput) statusOutput.value = "✅ Pronto."; 
-    
-    // Se invece quel pezzo verde è un DIV diverso, usa:
-    // document.getElementById('nome-tuo-div-verde').innerText = '';
 
-    // Rimuove l'evidenziazione azzurra
+    // Rimuove l'evidenziazione dalla tabella
     document.querySelectorAll('.selected-row').forEach(row => row.classList.remove('selected-row'));
     
-    // Disabilita i bottoni
+    // Aggiorna lo stato dei bottoni (li disabilita)
     updateManagementButtons();
 }
     
@@ -481,18 +550,48 @@ function updateManagementButtons(){
 }
 
     // --- CRUD FUNCTIONS ---
- async function addAcquisto(){
-        const data = document.getElementById('data-acquisto').value || new Date().toISOString().split('T')[0];
-        const articolo = document.getElementById('articolo-acquisto').value.trim();
-        const prezzoAcquisto = parseFloat(document.getElementById('prezzo-acquisto').value);
-        const guadagnoPrevisto = parseFloat(document.getElementById('guadagno-previsto').value)||0.0;
-        if(!articolo || isNaN(prezzoAcquisto) || prezzoAcquisto<=0){setStatus("⚠️ Inserisci articolo e prezzo valido."); return;}
-        setStatus("⏳ Registrazione acquisto...");
-        const newRow={data, articolo, acquisto:prezzoAcquisto, vendita:0.0, guadagno_previsto:guadagnoPrevisto, stato:'Acquistato'};
-        const {data:newData,error} = await supabaseClient.from('movimenti').insert([newRow]).select();
-        if(error){ offlineQueue.push({action:'INSERT',payload:newRow}); saveQueue(); setStatus(`⚠️ Acquisto salvato offline. ${offlineQueue.length} in coda.`);}
-        else{setStatus(`✅ Acquisto registrato (ID ${newData[0].id})`); await refreshData(); document.getElementById('articolo-acquisto').value=''; document.getElementById('prezzo-acquisto').value=''; document.getElementById('guadagno-previsto').value='';}
+async function addAcquisto() {
+    // Usiamo le variabili globali già dichiarate per essere più veloci
+    const data = dataAcquistoInput.value || new Date().toISOString().split('T')[0];
+    const articolo = articoloInput.value.trim();
+    const prezzoAcquisto = parseFloat(acquistoInput.value);
+    const guadagnoPrevisto = parseFloat(guadagnoPrevistoInput.value) || 0.0;
+    const notaAcquisto = notaAcquistoInput.value.trim();
+
+    if (!articolo || isNaN(prezzoAcquisto) || prezzoAcquisto <= 0) {
+        setStatus("⚠️ Inserisci articolo e prezzo valido."); 
+        return;
     }
+
+    setStatus("⏳ Registrazione acquisto...");
+
+    const newRow = { 
+        data, 
+        articolo, 
+        acquisto: prezzoAcquisto, 
+        vendita: 0.0, 
+        guadagno_previsto: guadagnoPrevisto, 
+        note: notaAcquisto, 
+        stato: 'Acquistato' 
+    };
+
+    const { data: newData, error } = await supabaseClient.from('movimenti').insert([newRow]).select();
+
+    if (error) {
+        offlineQueue.push({ action: 'INSERT', payload: newRow });
+        saveQueue();
+        setStatus(`⚠️ Acquisto salvato offline. ${offlineQueue.length} in coda.`);
+    } else {
+        setStatus(`✅ Acquisto registrato (ID ${newData[0].id})`);
+        await refreshData();
+        
+        // RESET CAMPI usando le variabili globali
+        articoloInput.value = '';
+        acquistoInput.value = '';
+        guadagnoPrevistoInput.value = '';
+        notaAcquistoInput.value = ''; 
+    }
+}
 
 async function updateMovimento(isVendita = false) {
     const idToEdit = selectedRowId;
@@ -504,7 +603,13 @@ async function updateMovimento(isVendita = false) {
     const updatePayload = {};
     const messages = [`ID ${idToEdit}:`];
 
-    // 1. Logica specifica per la VENDITA
+    // --- 1. RECUPERO NOTE (Uso la variabile globale nuovaNotaInput) ---
+    if (nuovaNotaInput) {
+        updatePayload.note = nuovaNotaInput.value.trim();
+        if (updatePayload.note) messages.push("📝 Note salvate");
+    }
+
+    // --- 2. LOGICA SPECIFICA PER LA VENDITA ---
     if (isVendita) {
         const prezzoVendita = parseFloat(prezzoVenditaInput.value);
         if (isNaN(prezzoVendita) || prezzoVendita <= 0) {
@@ -513,13 +618,11 @@ async function updateMovimento(isVendita = false) {
         }
         updatePayload.vendita = prezzoVendita;
         updatePayload.stato = 'Venduto';
-        // REGISTRA LA DATA DI OGGI:
         updatePayload.data_vendita = new Date().toISOString().split('T')[0]; 
         messages.push("💰 Vendita registrata");
     } 
 
-    // 2. Logica per MODIFICA (Articolo e Prezzo Acquisto)
-    // Nota: permettiamo la modifica anche durante la vendita se i campi sono pieni
+    // --- 3. LOGICA PER MODIFICA ---
     if (nuovoArticoloInput.value.trim()) {
         updatePayload.articolo = nuovoArticoloInput.value.trim();
         messages.push("✏️ Articolo modificato");
@@ -529,7 +632,6 @@ async function updateMovimento(isVendita = false) {
         messages.push("💸 Prezzo acquisto aggiornato");
     }
 
-    // Controllo se c'è effettivamente qualcosa da inviare
     if (Object.keys(updatePayload).length === 0) {
         setStatus("ℹ️ Nessuna modifica inserita.");
         return;
@@ -540,16 +642,14 @@ async function updateMovimento(isVendita = false) {
     const { error } = await supabaseClient.from('movimenti').update(updatePayload).eq('id', idToEdit);
 
     if (error) {
-        // Gestione Offline
         offlineQueue.push({ action: 'UPDATE', id: idToEdit, payload: updatePayload });
         saveQueue();
         setStatus(`⚠️ Errore rete. Salvato in coda offline.`);
         console.error("Errore Supabase:", error.message);
     } else {
-        // Successo
         setStatus(messages.join(" • "));
-        clearManagementFields(); // Svuota i campi e disabilita bottoni
-        await refreshData();     // Ricarica la tabella
+        clearManagementFields(); 
+        await refreshData(); 
     }
 }
 
@@ -665,14 +765,12 @@ function renderTable(data) {
         const tr = document.createElement('tr');
         tr.dataset.id = mov.id; 
 
-        // --- CALCOLO SICURO DEI VALORI PER EVITARE NaN ---
+        // --- CALCOLO SICURO DEI VALORI ---
         const acq = parseFloat(mov.acquisto) || 0;
         const ven = parseFloat(mov.vendita) || 0;
-        // Calcoliamo il profitto qui dentro così non fallisce mai
         const prof = ven - acq;
 
         // --- LOGICA GIACENZA E ALERT ---
-        // Se non è già calcolato nell'oggetto mov, lo calcoliamo al volo
         const dataAcq = new Date(mov.data);
         const oggi = new Date();
         const giorniGiacenza = Math.floor((oggi - dataAcq) / (1000 * 60 * 60 * 24));
@@ -699,12 +797,32 @@ function renderTable(data) {
                 ? `<span style="color: #ef4444; font-weight: 800;">🔴 ${giorniMostrati} gg</span>` 
                 : `<span>${giorniMostrati} gg</span>`);
 
+        // --- PREPARAZIONE TESTI PER ZOOM ---
+        // Usiamo JSON.stringify per evitare che apici o caratteri speciali rompano l'HTML
+        const artEscaped = (mov.articolo || '-').replace(/'/g, "\\'");
+        const noteEscaped = (mov.note || 'Nessuna nota').replace(/'/g, "\\'");
+
         tr.innerHTML = `
             <td style="display:none;">${mov.id}</td>
             <td>${new Date(mov.data).toLocaleDateString('it-IT')}</td>
             <td>${statoBadge}</td>
             <td>${dataVenLabel}</td>
-            <td style="text-align: left; font-weight: 700;">${mov.articolo || '-'}</td>
+            
+            <td class="zoomable" 
+                style="text-align: left; font-weight: 700; cursor: zoom-in;"
+                ontouchstart="handleTouchStart('${artEscaped}', '${noteEscaped}')" 
+                ontouchend="handleTouchEnd()" 
+                ontouchmove="handleTouchEnd()"
+                onmousedown="handleTouchStart('${artEscaped}', '${noteEscaped}')" 
+                onmouseup="handleTouchEnd()"
+                onmouseleave="handleTouchEnd()">
+                ${mov.articolo || '-'}
+            </td>
+            
+            <td style="text-align: left; font-size: 0.8rem; color: #64748b; max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                ${mov.note || '-'}
+            </td>
+
             <td>${f.format(acq)}</td>
             <td>${mov.vendita ? f.format(ven) : '-'}</td>
             <td class="${prof >= 0 ? 'profit-positive' : 'profit-negative'}">
@@ -1056,18 +1174,28 @@ function calcolaEVisualizzaInsight() {
         selectedRowId = currentId;
         row.classList.add('selected-row');
 
-        // RECUPERO DATI DALLE CELLE (Indici: 4=Articolo, 5=Acquisto, 6=Vendita)
+        // --- RECUPERO DATI DALLE CELLE CON INDICI NUOVI ---
+        // 4 = Articolo
+        // 5 = NOTE (Nuova!)
+        // 6 = Prezzo Acquisto
+        // 7 = Prezzo Vendita
         const articolo = row.cells[4].innerText;
+        const notaDallaTabella = row.cells[5].innerText === '-' ? '' : row.cells[5].innerText;
         
-        // Pulizia Prezzo Acquisto
-        let rawAcquisto = row.cells[5].innerText.replace('€', '').replace(/\./g, '').replace(',', '.').trim();
+        // Pulizia Prezzo Acquisto (Indice 6)
+        let rawAcquisto = row.cells[6].innerText.replace('€', '').replace(/\./g, '').replace(',', '.').trim();
         
-        // Pulizia Prezzo Vendita (gestisce il trattino '-')
-        let rawVendita = row.cells[6].innerText.replace('€', '').replace(/\./g, '').replace(',', '.').trim();
+        // Pulizia Prezzo Vendita (Indice 7)
+        let rawVendita = row.cells[7].innerText.replace('€', '').replace(/\./g, '').replace(',', '.').trim();
 
-        // Inserimento nei campi
+        // --- RIEMPIMENTO CAMPI ---
         idModificaInput.value = currentId;
         nuovoArticoloInput.value = articolo;
+        
+        // Se hai aggiunto la textarea con id "nuova-nota", la riempiamo
+        const textareaNota = document.getElementById('nuova-nota');
+        if (textareaNota) textareaNota.value = notaDallaTabella;
+
         nuovoAcquistoInput.value = parseFloat(rawAcquisto) || 0;
         prezzoVenditaInput.value = (rawVendita === '-' || isNaN(parseFloat(rawVendita))) ? '' : rawVendita;
 
@@ -1142,6 +1270,18 @@ document.getElementById('prezzo-acquisto').addEventListener('keypress', function
         
         <div id="lista-top-10" style="max-height: 60vh; overflow-y: auto; padding-right: 5px; border-top: 1px solid #f1f5f9;">
             </div>
+    </div>
+</div>
+
+<div id="modal-zoom" onclick="this.style.display='none'" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:10000; align-items:center; justify-content:center; backdrop-filter: blur(4px);">
+    <div style="background:white; width:90%; max-width:400px; border-radius:20px; padding:25px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.3);" onclick="event.stopPropagation()">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+            <h3 id="zoom-nome" style="margin:0; color:#4f46e5; font-size:1.4rem;"></h3>
+            <span onclick="document.getElementById('modal-zoom').style.display='none'" style="font-size:28px; cursor:pointer; color:#94a3b8;">&times;</span>
+        </div>
+        <label style="font-size:11px; font-weight:800; color:#64748b; text-transform:uppercase;">Note / Dettagli</label>
+        <p id="zoom-note" style="white-space:pre-wrap; background:#f1f5f9; padding:15px; border-radius:12px; color:#1e293b; margin-top:5px; line-height:1.5; border:1px solid #e2e8f0;"></p>
+        <button onclick="document.getElementById('modal-zoom').style.display='none'" class="btn-primary" style="width:100%; margin-top:20px; height:50px !important; border-radius:12px !important;">CHIUDI</button>
     </div>
 </div>
 
