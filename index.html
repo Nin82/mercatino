@@ -259,16 +259,17 @@
     <div id="tab-inventario" class="tab-content">
     <h2 style="margin-bottom: 10px;">Filtri e Riepilogo</h2>
 
-    <div id="record-dashboard" style="display: flex; gap: 10px; margin-bottom: 15px; overflow-x: auto;">
-        <div class="summary-box" style="flex: 1; min-width: 130px; border-top: 4px solid #f59e0b; background: #fffbeb; padding: 10px; border-radius: 8px; box-shadow: var(--shadow);">
-            <small style="color: #92400e; font-weight: bold; font-size: 10px;">🏆 TOP PROFITTO</small>
-            <div id="top-profit" style="font-size: 1.1rem; font-weight: 800; color: #1e293b;">€0,00</div>
-        </div>
-        <div class="summary-box" style="flex: 1; min-width: 130px; border-top: 4px solid #ec4899; background: #fdf2f8; padding: 10px; border-radius: 8px; box-shadow: var(--shadow);">
-            <small style="color: #9d174d; font-weight: bold; font-size: 10px;">📈 MEDIA/PEZZO</small>
-            <div id="media-profit" style="font-size: 1.1rem; font-weight: 800; color: #1e293b;">€0,00</div>
-        </div>
+<div id="record-dashboard" style="display: flex; gap: 10px; margin-bottom: 15px; overflow-x: auto;">
+    <div class="summary-box" onclick="mostraTop10()" style="flex: 1; min-width: 130px; border-top: 4px solid #f59e0b; background: #fffbeb; padding: 10px; border-radius: 8px; box-shadow: var(--shadow); cursor: pointer;">
+        <small style="color: #92400e; font-weight: bold; font-size: 10px;">🏆 TOP PROFITTO</small>
+        <div id="top-profit" style="font-size: 1.1rem; font-weight: 800; color: #1e293b;">€0,00</div>
     </div>
+    
+    <div class="summary-box" style="flex: 1; min-width: 130px; border-top: 4px solid #ec4899; background: #fdf2f8; padding: 10px; border-radius: 8px; box-shadow: var(--shadow);">
+        <small style="color: #9d174d; font-weight: bold; font-size: 10px;">📈 MEDIA/PEZZO</small>
+        <div id="media-profit" style="font-size: 1.1rem; font-weight: 800; color: #1e293b;">€0,00</div>
+    </div>
+</div>
     
     <div style="background: #fff; padding: 15px; border-radius: var(--border-radius); box-shadow: var(--shadow); margin-bottom: 20px;">
         <div class="form-row">
@@ -888,6 +889,44 @@ function updateRecords(data) {
 }
 
 
+
+function mostraTop10() {
+    const f = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR' });
+    
+    // 🔍 USIAMO I DATI FILTRATI (quelli che vedi in tabella)
+    // Se movimentiGlobali non è filtrato, usiamo quello che c'è in tabella
+    const datiDaAnalizzare = (typeof movimentiGlobali !== 'undefined') ? movimentiGlobali : [];
+
+    const classifica = [...datiDaAnalizzare]
+        .filter(m => m.stato === 'Venduto')
+        .sort((a, b) => {
+            const profA = (parseFloat(a.vendita) || 0) - (parseFloat(a.acquisto) || 0);
+            const profB = (parseFloat(b.vendita) || 0) - (parseFloat(b.acquisto) || 0);
+            return profB - profA;
+        })
+        .slice(0, 10);
+
+    let html = "";
+    if (classifica.length === 0) {
+        html = "<p style='text-align:center; color:#94a3b8;'>Nessun venduto trovato con questi filtri.</p>";
+    } else {
+        classifica.forEach((m, i) => {
+            const prof = (parseFloat(m.vendita) || 0) - (parseFloat(m.acquisto) || 0);
+            html += `
+                <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid #f1f5f9;">
+                    <div style="display:flex; flex-direction:column;">
+                        <span style="font-size:0.9rem;">${i+1}. <b>${m.articolo}</b></span>
+                        <small style="color:#94a3b8; font-size:0.7rem;">${new Date(m.data_vendita).toLocaleDateString('it-IT')}</small>
+                    </div>
+                    <span style="color:#166534; font-weight:bold; background:#dcfce7; padding:2px 8px; border-radius:6px; font-size:0.85rem;">+${f.format(prof)}</span>
+                </div>`;
+        });
+    }
+
+    document.getElementById('lista-top-10').innerHTML = html;
+    document.getElementById('modal-top-10').style.display = 'flex';
+}
+
     // --- EVENT LISTENERS ---
  document.addEventListener('DOMContentLoaded', () => {
     // Imposta data odierna di default
@@ -1005,6 +1044,20 @@ document.getElementById('prezzo-acquisto').addEventListener('keypress', function
 
 
 </script>
+
+
+
+<div id="modal-top-10" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:10000; justify-content:center; align-items:center; backdrop-filter: blur(4px);">
+    <div style="background:white; width:92%; max-width:400px; border-radius:15px; padding:20px; position:relative; box-shadow: 0 20px 25px rgba(0,0,0,0.2);">
+        <button onclick="document.getElementById('modal-top-10').style.display='none'" style="position:absolute; top:12px; right:15px; border:none; background:#eee; border-radius:50%; width:30px; height:30px; cursor:pointer; font-size:18px; display:flex; align-items:center; justify-content:center;">&times;</button>
+        
+        <h3 style="margin-top:0; color:#1e293b; font-size: 1.3rem; margin-bottom: 5px;">🏆 Top 10 Risultati</h3>
+        <p style="font-size: 0.8rem; color: #64748b; margin-bottom: 15px;">Basato sui filtri attuali</p>
+        
+        <div id="lista-top-10" style="max-height: 60vh; overflow-y: auto; padding-right: 5px; border-top: 1px solid #f1f5f9;">
+            </div>
+    </div>
+</div>
 
 </body>
 </html>
