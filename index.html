@@ -246,8 +246,8 @@ textarea:focus {
     </div>
 
 <div class="form-group">
-    <label>Analizza Foto con AI</label>
-    <div id="vinted-status-reg" style="font-size: 12px; color: blue; margin-top: 5px; min-height: 15px;"></div>
+<label style="font-weight: bold; color: #004085;">🤖 Assistente AI </label>
+            <div id="vinted-status-reg" style="font-size: 12px; color: #004085; margin-top: 5px; min-height: 20px; display: flex; align-items: center;"></div>
     
     <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px;">
         <div style="display: flex; gap: 10px;">
@@ -275,7 +275,6 @@ textarea:focus {
         <button onclick="salvaKey()" style="background: #444; color: white; border: none; padding: 5px 10px; border-radius: 4px; font-size: 11px;">SALVA</button>
     </div>
 </div>
-</div>
 
 <script>
 // Questa l'hai già messa tu
@@ -297,12 +296,12 @@ async function analizzaFotoConAI(fileScelto) {
 
     const status = document.getElementById('vinted-status-reg');
     if (!API_KEY) {
-        alert("Inserisci la chiave API!");
+        alert("Inserisci la chiave API e clicca SALVA!");
         return;
     }
 
-    // 1. Attiva lo Spinner
-    status.innerHTML = `<div class="spinner"></div> <span style="color: blue">AI sta analizzando la foto...</span>`;
+    // Attiva lo spinner
+    status.innerHTML = `<div class="spinner"></div> <span style="margin-left:8px;">AI sta analizzando il capo...</span>`;
 
     const reader = new FileReader();
     reader.readAsDataURL(fileScelto);
@@ -317,26 +316,23 @@ async function analizzaFotoConAI(fileScelto) {
                 body: JSON.stringify({
                     contents: [{
                         parts: [
-                            { text: "Analizza la foto per un annuncio Vinted. Restituisci SOLO un JSON: 'titolo', 'prezzo_consigliato', 'descrizione'. Non aggiungere commenti." },
-                            { inline_data: { mime_type: "image/jpeg", data: base64Image } }
-                        ]
+    { text: "Analizza la foto per Vinted. Restituisci SOLO un JSON: 'titolo', 'prezzo_consigliato', 'descrizione'. Nella descrizione includi alla fine 10 hashtag pertinenti: 5 in italiano e 5 in inglese (es: #maglietta #tshirt). Non aggiungere altro testo fuori dal JSON." },
+    { inline_data: { mime_type: "image/jpeg", data: base64Image } }
+]
                     }]
                 })
             });
 
             const result = await response.json();
 
-            // 2. Controllo se ci sono candidati (risposta AI)
             if (result.candidates && result.candidates[0].content.parts[0].text) {
-                let textResponse = result.candidates[0].content.parts[0].text;
-                
-                // Pulizia del JSON (toglie eventuali ```json ... ```)
+                const textResponse = result.candidates[0].content.parts[0].text;
                 const jsonMatch = textResponse.match(/\{[\s\S]*\}/);
                 
                 if (jsonMatch) {
                     const data = JSON.parse(jsonMatch[0]);
-
-                    // 3. COMPILAZIONE CAMPI (Il pezzo che mancava!)
+                    
+                    // Riempimento campi (Cerca entrambi gli ID possibili)
                     const fTitolo = document.getElementById('articolo') || document.getElementById('articolo-acquisto');
                     const fPrezzo = document.getElementById('guadagno-previsto');
                     const fDesc = document.getElementById('nota-acquisto');
@@ -345,18 +341,13 @@ async function analizzaFotoConAI(fileScelto) {
                     if (fPrezzo) fPrezzo.value = data.prezzo_consigliato || "";
                     if (fDesc) fDesc.value = data.descrizione || "";
                     
-                    status.innerHTML = "✅ <span style='color: green'>Analisi completata!</span>";
-                } else {
-                    status.innerHTML = "❌ <span style='color: red'>Formato dati non valido.</span>";
+                    status.innerHTML = "✅ <span style='color: green'>Analisi completata con Hashtag!</span>";
                 }
-            } else if (result.error) {
-                status.innerHTML = "❌ <span style='color: red'>Errore Google: " + result.error.message + "</span>";
             } else {
-                status.innerHTML = "❌ <span style='color: red'>L'AI non ha risposto correttamente.</span>";
+                status.innerHTML = "❌ <span style='color: red'>L'AI non ha capito la foto.</span>";
             }
         } catch (e) {
-            console.error(e);
-            status.innerHTML = "❌ <span style='color: red'>Errore di connessione o nel codice.</span>";
+            status.innerHTML = "❌ <span style='color: red'>Errore di connessione.</span>";
         }
     };
 }
