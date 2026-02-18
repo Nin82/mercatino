@@ -71,12 +71,12 @@
         margin-top: 20px;
     }
 
-    #main-table {
-        width: 100%;
-        border-collapse: separate; /* Necessario per lo sticky */
+#main-table {
+        width: max-content; 
+        border-collapse: separate;
         border-spacing: 0;
-        table-layout: fixed;
-        min-width: 1100px; /* Impedisce il collasso delle 9 colonne */
+        table-layout: auto; 
+        min-width: 100%; 
     }
 
     #main-table thead th {
@@ -187,6 +187,22 @@ textarea:focus {
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
+.spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(0,0,255,.1);
+    border-radius: 50%;
+    border-top-color: #007bff;
+    animation: spin 1s linear infinite;
+    margin-right: 8px;
+    vertical-align: middle;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
 </style>
 
 </head>
@@ -228,6 +244,141 @@ textarea:focus {
             <input type="number" id="guadagno-previsto" step="0.01">
         </div>
     </div>
+
+<div class="form-group">
+    <label>Analizza Foto con AI</label>
+    <div id="vinted-status-reg" style="font-size: 12px; color: blue; margin-top: 5px; min-height: 15px;"></div>
+    
+    <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px;">
+        <div style="display: flex; gap: 10px;">
+            <label style="flex: 1; background: #007bff; color: white; padding: 12px; border-radius: 6px; text-align: center; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 5px;">
+                📸 Scatta
+                <input type="file" accept="image/*" capture="environment" onchange="analizzaFotoConAI(this.files[0])" style="display:none;">
+            </label>
+
+            <label style="flex: 1; background: #6c757d; color: white; padding: 12px; border-radius: 6px; text-align: center; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 5px;">
+                🖼️ Galleria
+                <input type="file" accept="image/*" onchange="analizzaFotoConAI(this.files[0])" style="display:none;">
+            </label>
+        </div>
+
+        <button onclick="resetCampiAI()" style="width: 100%; background: #dc3545; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: bold;">
+            🗑️ Svuota Campi
+        </button>
+    </div>
+</div>
+
+<div style="margin-top: 30px; padding: 10px; border-top: 1px solid #ddd;">
+    <label style="font-size: 10px; color: #888;">⚙️ CONFIGURAZIONE AI (GEMINI)</label>
+    <div style="display: flex; gap: 5px; margin-top: 5px;">
+        <input type="password" id="input-api-key" placeholder="Incolla qui la chiave API..." style="flex: 1; font-size: 12px; border: 1px solid #ccc; border-radius: 4px; padding: 5px;">
+        <button onclick="salvaKey()" style="background: #444; color: white; border: none; padding: 5px 10px; border-radius: 4px; font-size: 11px;">SALVA</button>
+    </div>
+</div>
+</div>
+
+<script>
+// Questa l'hai già messa tu
+function salvaKey() {
+    const key = document.getElementById('input-api-key').value;
+    if(key) {
+        localStorage.setItem('mia_gemini_key', key);
+        alert("Chiave salvata nel browser! Ora l'AI è attiva.");
+        document.getElementById('input-api-key').value = "";
+    }
+}
+
+// INCOLLA QUESTA SUBITO SOTTO
+async function analizzaFotoConAI(fileScelto) {
+    if (!fileScelto) return;
+
+    let API_KEY = localStorage.getItem('mia_gemini_key');
+    if (API_KEY) API_KEY = API_KEY.trim();
+
+    const status = document.getElementById('vinted-status-reg');
+    if (!API_KEY) {
+        alert("Inserisci la chiave API!");
+        return;
+    }
+
+    // 1. Attiva lo Spinner
+    status.innerHTML = `<div class="spinner"></div> <span style="color: blue">AI sta analizzando la foto...</span>`;
+
+    const reader = new FileReader();
+    reader.readAsDataURL(fileScelto);
+    reader.onload = async () => {
+        const base64Image = reader.result.split(',')[1];
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${API_KEY}`;
+
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{
+                        parts: [
+                            { text: "Analizza la foto per un annuncio Vinted. Restituisci SOLO un JSON: 'titolo', 'prezzo_consigliato', 'descrizione'. Non aggiungere commenti." },
+                            { inline_data: { mime_type: "image/jpeg", data: base64Image } }
+                        ]
+                    }]
+                })
+            });
+
+            const result = await response.json();
+
+            // 2. Controllo se ci sono candidati (risposta AI)
+            if (result.candidates && result.candidates[0].content.parts[0].text) {
+                let textResponse = result.candidates[0].content.parts[0].text;
+                
+                // Pulizia del JSON (toglie eventuali ```json ... ```)
+                const jsonMatch = textResponse.match(/\{[\s\S]*\}/);
+                
+                if (jsonMatch) {
+                    const data = JSON.parse(jsonMatch[0]);
+
+                    // 3. COMPILAZIONE CAMPI (Il pezzo che mancava!)
+                    const fTitolo = document.getElementById('articolo') || document.getElementById('articolo-acquisto');
+                    const fPrezzo = document.getElementById('guadagno-previsto');
+                    const fDesc = document.getElementById('nota-acquisto');
+
+                    if (fTitolo) fTitolo.value = data.titolo || "";
+                    if (fPrezzo) fPrezzo.value = data.prezzo_consigliato || "";
+                    if (fDesc) fDesc.value = data.descrizione || "";
+                    
+                    status.innerHTML = "✅ <span style='color: green'>Analisi completata!</span>";
+                } else {
+                    status.innerHTML = "❌ <span style='color: red'>Formato dati non valido.</span>";
+                }
+            } else if (result.error) {
+                status.innerHTML = "❌ <span style='color: red'>Errore Google: " + result.error.message + "</span>";
+            } else {
+                status.innerHTML = "❌ <span style='color: red'>L'AI non ha risposto correttamente.</span>";
+            }
+        } catch (e) {
+            console.error(e);
+            status.innerHTML = "❌ <span style='color: red'>Errore di connessione o nel codice.</span>";
+        }
+    };
+}
+
+function resetCampiAI() {
+    if (confirm("Vuoi svuotare tutti i campi compilati dall'AI?")) {
+        // Elenco di tutti gli ID dei campi da svuotare
+        const campi = ['articolo', 'articolo-acquisto', 'guadagno-previsto', 'nota-acquisto'];
+        
+        campi.forEach(id => {
+            const elemento = document.getElementById(id);
+            if (elemento) elemento.value = "";
+        });
+
+        // Resetta anche il messaggio di stato
+        const status = document.getElementById('vinted-status-reg');
+        if (status) status.innerText = "✨ Campi resettati.";
+        
+        console.log("Campi svuotati correttamente.");
+    }
+}   
+</script>
 
     <div class="form-row">
         <div class="form-group" style="flex: 1;">
@@ -387,8 +538,8 @@ textarea:focus {
                     <th style="width: 100px;">DATA ACQ.</th>
                     <th style="width: 130px;">STATO</th>
                     <th style="width: 100px;">DATA VEN.</th>
-                    <th style="text-align: left; width: auto;">ARTICOLO</th>
-                    <th style="text-align: left; width: 150px;">NOTE</th>
+                    <th style="text-align: left; width: 300px;">ARTICOLO</th>
+                    <th style="text-align: left; width: 120px;">NOTE</th>
                     <th style="width: 90px;">€ ACQ.</th>
                     <th style="width: 90px;">€ VEN.</th>
                     <th style="width: 100px;">PROFITTO</th>
@@ -1131,6 +1282,17 @@ function calcolaEVisualizzaInsight() {
     }
 }
 
+
+
+
+
+// Funzione di supporto per leggere il file
+const toBase64 = file => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = error => reject(error);
+});
     // --- EVENT LISTENERS ---
  document.addEventListener('DOMContentLoaded', () => {
     // Imposta data odierna di default
@@ -1239,6 +1401,19 @@ document.getElementById('prezzo-acquisto').addEventListener('keypress', function
     }
 });
 
+document.addEventListener('DOMContentLoaded', () => {
+    const desc = document.getElementById('nota-acquisto');
+    if (desc) {
+        desc.addEventListener('click', function() {
+            if (this.value.trim() === "") return;
+            this.select();
+            navigator.clipboard.writeText(this.value);
+            document.getElementById('vinted-status-reg').innerText = "📋 Copiato!";
+            this.style.backgroundColor = "#e8f5e9";
+            setTimeout(() => this.style.backgroundColor = "", 500);
+        });
+    }
+});
 
     // --- SERVICE WORKER ---
     if('serviceWorker' in navigator){ window.addEventListener('load',()=>{ navigator.serviceWorker.register('/mercatino/sw.js').then(reg=>console.log('✅ SW registrato',reg.scope)).catch(err=>console.error('❌ SW fallito',err));}); }
